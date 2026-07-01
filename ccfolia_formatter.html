@@ -747,6 +747,7 @@
       const charColorMap = {}; // キャラ名 → カラーコード
       const charImageMap = {}; // キャラ名 → DataURL（アイコン画像）
       const stillMap = {}; // エントリーインデックス → { dataUrl, filename }
+      let loadedFileName = "";
       let colorIdx = 0;
 
       /* フォールバック用パレット（ログにカラー指定がない場合に使用） */
@@ -1527,6 +1528,7 @@
       fileInput.addEventListener("change", (e) => {
         const f = e.target.files[0];
         if (!f) return;
+        loadedFileName = f.name.replace(/\.[^.]+$/, "");
         const r = new FileReader();
         r.onload = (ev) => processHTML(ev.target.result, true);
         r.readAsText(f, "utf-8");
@@ -1543,6 +1545,7 @@
         dropZone.classList.remove("dragover");
         const f = e.dataTransfer.files[0];
         if (!f) return;
+        loadedFileName = f.name.replace(/\.[^.]+$/, "");
         const r = new FileReader();
         r.onload = (ev) => processHTML(ev.target.result, true);
         r.readAsText(f, "utf-8");
@@ -1770,11 +1773,24 @@ ${bodyHtml}
 </body>
 </html>`;
 
+          function exportBaseName() {
+            const base = loadedFileName || "log";
+            const now = new Date();
+            const ts = now.getFullYear().toString()
+              + String(now.getMonth() + 1).padStart(2, "0")
+              + String(now.getDate()).padStart(2, "0")
+              + "_"
+              + String(now.getHours()).padStart(2, "0")
+              + String(now.getMinutes()).padStart(2, "0")
+              + String(now.getSeconds()).padStart(2, "0");
+            return `${base}[整形済]${ts}`;
+          }
+
           if (!hasCharImages) {
             const blob = new Blob([out], { type: "text/html;charset=utf-8" });
             const a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
-            a.download = "log.html";
+            a.download = `${exportBaseName()}.html`;
             a.click();
             return;
           }
@@ -1802,8 +1818,9 @@ ${bodyHtml}
                 rej(new Error("JSZip の読み込みに失敗しました"));
               document.head.appendChild(s);
             });
+            const expName = exportBaseName();
             const zip = new JSZip();
-            zip.file("log.html", out);
+            zip.file(`${expName}.html`, out);
             const imgF = zip.folder("images");
             for (const [name, dataUrl] of Object.entries(charImageMap)) {
               const [hdr, b64] = dataUrl.split(",");
@@ -1817,7 +1834,7 @@ ${bodyHtml}
             });
             const a = document.createElement("a");
             a.href = URL.createObjectURL(zb);
-            a.download = "log_export.zip";
+            a.download = `${expName}.zip`;
             a.click();
           } catch (e) {
             alert("エクスポートに失敗しました: " + e.message);
