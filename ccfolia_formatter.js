@@ -128,6 +128,20 @@ function getExtFromDataUrl(dataUrl) {
   return m ? `.${m[1]}` : ".png";
 }
 
+/* ─── ダイス判定 ─── */
+const DICE_COMMANDS = new Set([
+  "CC", "CCB", "CBR", "CBRB", "RES", "RESB", "FAR", "D66",
+  "CHOICE", "REP", "REPEAT",
+]);
+function isDiceMessage(text) {
+  if (!text.includes("＞")) return false;
+  const first = text.split("\n")[0].trim();
+  if (/^\d/.test(first)) return true;
+  if (/^(?:x|rep|repeat)\d+/i.test(first)) return true;
+  const cmd = first.toUpperCase().split(/[\s<=>(\[+\-]/)[0];
+  return DICE_COMMANDS.has(cmd);
+}
+
 /* ─── ログパース ─── */
 function parseLog(html) {
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -382,7 +396,7 @@ function makeEntryEl(entry, idx) {
   const entryDiv = document.createElement("div");
 
   if (entry.type === "gm") {
-    entryDiv.className = "entry gm";
+    entryDiv.className = "entry gm" + (isDiceMessage(entry.text) ? " dice" : "");
     const lb = document.createElement("div");
     lb.className = "gm-label";
     lb.textContent = gmLabel(entry);
@@ -395,7 +409,7 @@ function makeEntryEl(entry, idx) {
   } else {
     /* PC */
     wrapper.dataset.speaker = entry.speaker;
-    entryDiv.className = "entry";
+    entryDiv.className = "entry" + (isDiceMessage(entry.text) ? " dice" : "");
     const av = makeAvatar(entry.speaker);
     const bb = document.createElement("div");
     bb.className = "bubble";
@@ -953,6 +967,8 @@ body{background:var(--bg);color:var(--text);font-family:'Hiragino Sans','Yu Goth
 .still-slot.has-still{display:block;margin-top:.6rem;}
 .still-slot.has-still img.still-img{width:100%;max-width:100%;border-radius:6px;display:block;cursor:pointer;transition:opacity .15s;}
 .still-slot.has-still img.still-img:hover{opacity:.93;}
+.entry.dice .speech-text{font-family:'Courier New',monospace;font-size:.85rem;color:var(--text-sub);}
+.entry.gm.dice .gm-text{font-family:'Courier New',monospace;font-size:.85rem;color:var(--muted);}
 .entry-wrapper.hidden{display:none!important;}
 .entry.sys.hidden{display:none!important;}`;
 
