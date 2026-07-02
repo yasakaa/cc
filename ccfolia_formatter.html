@@ -1162,21 +1162,16 @@
             '<div id="empty-state"><div class="big">📜</div>ログファイルを読み込むと整形されて表示されます</div>';
           return;
         }
-        /* タブごとにセクションを構築（O(n) で処理） */
-        const tabSections = new Map();
+        /* 全エントリーを時系列順に1つのセクションへ。各要素に data-entry-tab を付与し
+           applyFilters でタブ絞り込みに使う */
+        const section = document.createElement("div");
+        section.className = "tab-section";
         entries.forEach((e, idx) => {
-          if (!tabSections.has(e.tab)) {
-            const sec = document.createElement("div");
-            sec.className = "tab-section";
-            sec.dataset.tab = e.tab;
-            tabSections.set(e.tab, sec);
-          }
-          tabSections.get(e.tab).appendChild(makeEntryEl(e, idx));
+          const el = makeEntryEl(e, idx);
+          el.dataset.entryTab = e.tab;
+          section.appendChild(el);
         });
-        const orderedTabs = [...new Set(entries.map((e) => e.tab))];
-        orderedTabs.forEach((tab) => {
-          if (tabSections.has(tab)) logArea.appendChild(tabSections.get(tab));
-        });
+        logArea.appendChild(section);
       }
 
       /* ─── タブバー ─── */
@@ -1269,31 +1264,22 @@
 
       /* ─── フィルター適用 ─── */
       function applyFilters() {
-        /* タブ切り替え */
-        document.querySelectorAll(".tab-section").forEach((s) => {
-          s.classList.toggle(
-            "hidden",
-            activeTab !== "all" && s.dataset.tab !== activeTab,
-          );
+        const filteringTab = activeTab !== "all";
+        const filteringChar = activeChar !== "all";
+
+        document.querySelectorAll(".entry-wrapper").forEach((el) => {
+          const tabHidden = filteringTab && el.dataset.entryTab !== activeTab;
+          const type = el.dataset.entryType;
+          const charHidden =
+            type === "pc"
+              ? filteringChar && el.dataset.speaker !== activeChar
+              : filteringChar;
+          el.classList.toggle("hidden", tabHidden || charHidden);
         });
-        const filtering = activeChar !== "all";
-        /* PC発言：entry-wrapper に data-speaker があるので参照 */
-        document
-          .querySelectorAll(".entry-wrapper[data-entry-type='pc']")
-          .forEach((el) => {
-            el.classList.toggle(
-              "hidden",
-              filtering && el.dataset.speaker !== activeChar,
-            );
-          });
-        /* GM・システムメッセージはキャラ絞り込み中は非表示 */
-        document
-          .querySelectorAll(".entry-wrapper[data-entry-type='gm']")
-          .forEach((el) => {
-            el.classList.toggle("hidden", filtering);
-          });
+
         document.querySelectorAll(".entry.sys").forEach((el) => {
-          el.classList.toggle("hidden", filtering);
+          const tabHidden = filteringTab && el.dataset.entryTab !== activeTab;
+          el.classList.toggle("hidden", tabHidden || filteringChar);
         });
       }
 
