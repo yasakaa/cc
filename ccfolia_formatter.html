@@ -1596,11 +1596,12 @@
             return `<div class="avatar" aria-hidden="true" style="background:${getColor(name)}"></div>`;
           }
           function eHtml(entry, idx) {
+            const t = esc(entry.tab);
             if (entry.type === "sys")
-              return `<div class="entry sys">${entry.text.split("\n").map(esc).join("<br>")}</div>`;
+              return `<div class="entry sys" data-entry-tab="${t}">${entry.text.split("\n").map(esc).join("<br>")}</div>`;
             if (entry.type === "gm")
-              return `<div class="entry-wrapper" data-entry-type="gm"><div class="entry gm"><div class="gm-label">${esc(gmLabel(entry))}</div><div class="gm-text">${fmt(entry.text)}</div>${stillHtml(idx)}</div></div>`;
-            return `<div class="entry-wrapper" data-entry-type="pc" data-speaker="${esc(entry.speaker)}"><div class="entry">${avHtml(entry.speaker)}<div class="bubble"><div class="speaker-name" style="color:${getColor(entry.speaker)}">${esc(entry.speaker)}</div><div class="speech-text">${fmt(entry.text)}</div>${stillHtml(idx)}</div></div></div>`;
+              return `<div class="entry-wrapper" data-entry-type="gm" data-entry-tab="${t}"><div class="entry gm"><div class="gm-label">${esc(gmLabel(entry))}</div><div class="gm-text">${fmt(entry.text)}</div>${stillHtml(idx)}</div></div>`;
+            return `<div class="entry-wrapper" data-entry-type="pc" data-speaker="${esc(entry.speaker)}" data-entry-tab="${t}"><div class="entry">${avHtml(entry.speaker)}<div class="bubble"><div class="speaker-name" style="color:${getColor(entry.speaker)}">${esc(entry.speaker)}</div><div class="speech-text">${fmt(entry.text)}</div>${stillHtml(idx)}</div></div></div>`;
           }
 
           const expTabs = [...new Set(parsedEntries.map((e) => e.tab))];
@@ -1630,16 +1631,10 @@
             )
             .join("");
 
-          const bodyHtml = expTabs
-            .map((tab) => {
-              const tabEntries = parsedEntries
-                .map((e, i) => ({ e, i }))
-                .filter(({ e }) => e.tab === tab)
-                .map(({ e, i }) => eHtml(e, i))
-                .join("\n");
-              return `<div class="tab-section" data-tab="${tab}">\n${tabEntries}\n</div>`;
-            })
-            .join("\n");
+          const bodyHtml =
+            `<div class="tab-section">\n` +
+            parsedEntries.map((e, i) => eHtml(e, i)).join("\n") +
+            `\n</div>`;
 
           /* エクスポート用CSS（ダーク＋ライト両テーマ、スチル含む） */
           const css = `
@@ -1698,15 +1693,19 @@ body{background:var(--bg);color:var(--text);font-family:'Hiragino Sans','Yu Goth
 (function(){
   var activeTab='all', activeChar='all';
   function applyFilters(){
-    var filtering=activeChar!=='all';
-    document.querySelectorAll('.tab-section').forEach(function(s){
-      s.classList.toggle('hidden',activeTab!=='all'&&s.dataset.tab!==activeTab);
+    var filteringTab=activeTab!=='all';
+    var filteringChar=activeChar!=='all';
+    document.querySelectorAll('.entry-wrapper').forEach(function(el){
+      var tabHidden=filteringTab&&el.dataset.entryTab!==activeTab;
+      var type=el.dataset.entryType;
+      var charHidden=type==='pc'
+        ?(filteringChar&&el.dataset.speaker!==activeChar)
+        :filteringChar;
+      el.classList.toggle('hidden',tabHidden||charHidden);
     });
-    document.querySelectorAll('.entry-wrapper[data-entry-type="pc"]').forEach(function(el){
-      el.classList.toggle('hidden',filtering&&el.dataset.speaker!==activeChar);
-    });
-    document.querySelectorAll('.entry-wrapper[data-entry-type="gm"],.entry.sys').forEach(function(el){
-      el.classList.toggle('hidden',filtering);
+    document.querySelectorAll('.entry.sys').forEach(function(el){
+      var tabHidden=filteringTab&&el.dataset.entryTab!==activeTab;
+      el.classList.toggle('hidden',tabHidden||filteringChar);
     });
   }
   var tabBar=document.getElementById('tab-bar');
