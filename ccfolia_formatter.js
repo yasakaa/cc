@@ -5,15 +5,22 @@ const ui = {
   tabBar: document.getElementById("tab-bar"),
   controls: document.getElementById("controls"),
   charFilters: document.getElementById("char-filters"),
-  stats: document.getElementById("stats"),
+  charFilterMenu: document.getElementById("charFilterMenu"),
+  criticalStats: document.getElementById("criticalStats"),
+  criticalRows: document.getElementById("criticalRows"),
   gmPanel: document.getElementById("gm-panel"),
   gmRows: document.getElementById("gm-rows"),
   iconPanel: document.getElementById("icon-panel"),
   iconRows: document.getElementById("icon-rows"),
   logArea: document.getElementById("logArea"),
   themeToggle: document.getElementById("themeToggle"),
+  fontSizeButtons: document.querySelectorAll(".font-size-btn"),
   exportBtn: document.getElementById("exportBtn"),
   exportHtmlBtn: document.getElementById("exportHtmlBtn"),
+  backToTop: document.getElementById("backToTop"),
+  sourceModeButtons: document.querySelectorAll(".source-mode-btn"),
+  dropZoneText: document.getElementById("dropZoneText"),
+  dropZoneHint: document.getElementById("dropZoneHint"),
 };
 
 /* ─── 状態管理 ─── */
@@ -28,6 +35,9 @@ const state = {
   stills: {},
   loadedFileName: "",
   colorIdx: 0,
+  sourceMode: "official",
+  rawOfficialFiles: [],
+  mainTab: "_",
 };
 
 /* フォールバック用パレット（ログにカラー指定がない場合に使用） */
@@ -49,6 +59,9 @@ function getColor(name) {
   if (!state.colors[name])
     state.colors[name] = PALETTE[state.colorIdx++ % PALETTE.length];
   return state.colors[name];
+}
+function safeLogColor(color) {
+  return /^#[0-9a-f]{3,8}$/i.test(color || "") ? color : null;
 }
 
 /* ─── GM/PC 判定 ─── */
@@ -117,15 +130,33 @@ function decodeHTML(str) {
 }
 /* HTML特殊文字エスケープ */
 function esc(s) {
-  return s
+  return String(s)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+/* 属性値用。ログ由来の名前をHTML属性へ出力する場合はこちらを使う。 */
+function escAttr(s) {
+  return esc(s)
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 /* DataURL から拡張子を取得 */
 function getExtFromDataUrl(dataUrl) {
   const m = dataUrl.match(/data:image\/(\w+);/);
   return m ? `.${m[1]}` : ".png";
+}
+
+/* 保存HTMLは通常、画面で読み込まれているCSSをそのまま埋め込む。
+   file:// などCSSOMへアクセスできない環境だけ、内蔵フォールバックを使用する。 */
+function getRuntimeStylesheetCss() {
+  try {
+    const link = document.querySelector('link[href$="ccfolia_formatter.css"]');
+    const sheet = [...document.styleSheets].find((item) => item.ownerNode === link);
+    return sheet ? [...sheet.cssRules].map((rule) => rule.cssText).join("\n") : "";
+  } catch {
+    return "";
+  }
 }
 
 /* ─── ダイス判定 ─── */
@@ -202,7 +233,8 @@ function parseLog(html) {
       speaker,
       speakerRaw: speakerRaw.trim(),
       text: textHtml,
-      color: logColor,
+      color: safeLogColor(logColor),
+      rollText: isDiceMessage(textHtml) ? textHtml : "",
     });
   });
 
@@ -210,6 +242,92 @@ function parseLog(html) {
   state.allUniqueRawNames = [
     ...new Set([...rawNamesSeen, ...customAddedNames]),
   ];
+  return entries;
+}
+
+/* ─── ココフォリア公式HTMLログのパース ───
+   公式ZIPには「すべて」HTMLと各タブHTMLが同居する。前者を本文に使い、
+   後者はランダムなチャンネルIDを人が読めるタブ名へ対応付けるために使う。 */
+function officialTabName(filename, doc) {
+  /* ZIP内の日本語ファイル名は文字コード情報がないことがあるため、
+     信頼できるHTMLのtitleを優先する。 */
+  const title = doc?.querySelector("title")?.textContent || "";
+  const m = title.match(/\[([^\]]+)\]\s*$/) || filename.match(/\[([^\]]+)\](?:\.html?)?$/i);
+  return m ? m[1] : filename.replace(/\.html?$/i, "");
+}
+function officialAvatarImages(doc) {
+  const images = new Map();
+  doc.querySelectorAll("style").forEach((style) => {
+    /* 公式ログの `.avatar-image-N { background-image: url(data:...) }` を取得 */
+    const re = /\.avatar-image-([^\s{]+)\s*\{[^}]*?background-image\s*:\s*url\(["']?(data:image\/[^"')\s]+)["']?\)/gi;
+    let match;
+    while ((match = re.exec(style.textContent))) images.set(`avatar-image-${match[1]}`, match[2]);
+  });
+  return images;
+}
+function parseOfficialLogs(files) {
+  const parsed = files.map((file) => ({
+    ...file,
+    doc: new DOMParser().parseFromString(file.html, "text/html"),
+  }));
+  const channelNames = new Map();
+  parsed.forEach(({ name, doc }) => {
+    const tab = officialTabName(name, doc);
+    if (tab === "すべて") return;
+    const article = doc.querySelector("article.message[data-channel]");
+    if (article) channelNames.set(article.dataset.channel, tab);
+  });
+
+  const allFile = parsed.find(({ name, doc }) => officialTabName(name, doc) === "すべて");
+  const sources = allFile ? [allFile] : parsed;
+  const entries = [];
+  const rawNamesSeen = new Set();
+  const seen = new Set();
+  sources.forEach(({ name, doc }) => {
+    const fallbackTab = officialTabName(name, doc);
+    const avatarImages = officialAvatarImages(doc);
+    doc.querySelectorAll("article.message[data-channel]").forEach((article) => {
+      const channel = article.dataset.channel;
+      const tab = channelNames.get(channel) || (channel === "main" ? "メイン" : fallbackTab);
+      const speakerRaw = article.querySelector(".speaker")?.textContent.trim() || "";
+      const message = article.querySelector(".message-text")?.textContent.trim() || "";
+      const roll = article.querySelector(".roll-result")?.textContent.trim() || "";
+      const text = [message, roll].filter(Boolean).join("\n");
+      if (!text) return;
+      const timestamp = article.querySelector("time")?.getAttribute("datetime") || "";
+      const avatarClass = [...(article.querySelector(".avatar")?.classList || [])]
+        .find((className) => className.startsWith("avatar-image-"));
+      /* 個別HTMLを複数選択した場合の重複防止 */
+      const key = `${channel}\u0000${timestamp}\u0000${speakerRaw}\u0000${text}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      if (speakerRaw && !SYS_KEYS.has(normalizeKey(speakerRaw))) rawNamesSeen.add(speakerRaw);
+      /* 情報タブは内容そのものをGM情報として扱い、アイコンなしで表示する */
+      const type = tab === "情報"
+        ? "gm"
+        : article.classList.contains("system")
+          ? "sys"
+          : roleOf(speakerRaw);
+      entries.push({
+        type,
+        tab,
+        speaker: type === "pc" ? speakerRaw : "",
+        speakerRaw,
+        text,
+        rollText: roll,
+        color: safeLogColor(article.querySelector(".speaker")?.style.getPropertyValue("--speaker-color")),
+        image: avatarClass ? avatarImages.get(avatarClass) || null : null,
+        timestamp,
+      });
+    });
+  });
+  /* 「すべて」HTMLは公式が確定した時系列（時刻なしのシステム行を含む）を
+     すでに持つため、再ソートせずDOM順を完全に維持する。 */
+  if (!allFile) {
+    entries.sort((a, b) => (a.timestamp || "").localeCompare(b.timestamp || ""));
+  }
+  state.allUniqueRawNames = [...new Set([...rawNamesSeen, ...customAddedNames])];
+  state.mainTab = entries.some((e) => e.tab === "メイン") ? "メイン" : entries[0]?.tab || "_";
   return entries;
 }
 
@@ -380,7 +498,16 @@ function makeEntryEl(entry, idx) {
   if (entry.type === "sys") {
     const d = document.createElement("div");
     d.className = "entry sys";
-    d.innerHTML = entry.text.split("\n").map(esc).join("<br>");
+    if (state.sourceMode === "official" && entry.tab !== state.mainTab) {
+      d.classList.add("from-subtab");
+      const context = document.createElement("span");
+      context.className = "tab-context";
+      context.textContent = `【${entry.tab} タブ】`;
+      d.appendChild(context);
+    }
+    const text = document.createElement("span");
+    text.innerHTML = entry.text.split("\n").map(esc).join("<br>");
+    d.appendChild(text);
     return d;
   }
 
@@ -388,6 +515,13 @@ function makeEntryEl(entry, idx) {
   const wrapper = document.createElement("div");
   wrapper.className = "entry-wrapper";
   wrapper.dataset.entryType = entry.type;
+  if (state.sourceMode === "official" && entry.tab !== state.mainTab) {
+    wrapper.classList.add("from-subtab");
+    const context = document.createElement("div");
+    context.className = "tab-context";
+    context.textContent = `【${entry.tab} タブ】`;
+    wrapper.appendChild(context);
+  }
 
   /* スチルスロット（bubble または gm ブロック内に配置） */
   const stillSlot = document.createElement("div");
@@ -520,17 +654,60 @@ function buildCharFilters(entries) {
     b.append(sp);
     ui.charFilters.appendChild(b);
   });
-  const counts = {};
-  speakers.forEach((sp) => {
-    counts[sp] = entries.filter((e) => e.speaker === sp).length;
-  });
-  ui.stats.innerHTML = speakers
-    .map(
-      (sp) =>
-        `<span><span class="dot" data-charname="${esc(sp)}" style="background:${getColor(sp)}"></span>${esc(sp)}：${counts[sp]}回</span>`,
-    )
-    .join("");
   ui.controls.style.display = "flex";
+}
+
+function criticalFumbleKind(entry) {
+  /* 公式ログではダイス結果欄、従来ログではダイス行だけを確認する */
+  const resultText = entry.rollText || (isDiceMessage(entry.text) ? entry.text : "");
+  return {
+    critical: /＞\s+(?:決定的成功|クリティカル|自動的成功)/.test(resultText),
+    fumble: /＞\s+(?:致命的失敗|ファンブル|自動的失敗)/.test(resultText),
+  };
+}
+
+function criticalFumbleStats(entries) {
+  const results = new Map();
+  entries.filter((entry) => entry.type === "pc").forEach((entry) => {
+    if (!results.has(entry.speaker)) {
+      results.set(entry.speaker, { speaker: entry.speaker, critical: 0, fumble: 0 });
+    }
+    const kind = criticalFumbleKind(entry);
+    if (kind.critical) {
+      results.get(entry.speaker).critical++;
+    }
+    if (kind.fumble) {
+      results.get(entry.speaker).fumble++;
+    }
+  });
+  return [...results.values()].filter(({ critical, fumble }) => critical || fumble);
+}
+
+function criticalPreviewHtml(entries, speaker) {
+  return entries
+    .filter((entry) => entry.type === "pc" && entry.speaker === speaker)
+    .map((entry) => ({ entry, kind: criticalFumbleKind(entry) }))
+    .filter(({ kind }) => kind.critical || kind.fumble)
+    .map(({ entry, kind }) => {
+      const labels = [kind.critical && "クリティカル", kind.fumble && "ファンブル"]
+        .filter(Boolean)
+        .join(" / ");
+      const tab = entry.tab && entry.tab !== "_" ? ` [${esc(entry.tab)}]` : "";
+      return `<div class="critical-preview-entry"><span class="critical-preview-kind">${labels}${tab}</span>${fmt(entry.text)}</div>`;
+    })
+    .join("");
+}
+
+function buildCriticalStats(entries) {
+  const stats = criticalFumbleStats(entries);
+  ui.criticalRows.innerHTML = "";
+  stats.forEach(({ speaker, critical, fumble }) => {
+    const row = document.createElement("div");
+    row.className = "critical-stat-row";
+    row.innerHTML = `<details class="critical-char-preview"><summary><span class="dot" data-charname="${escAttr(speaker)}" style="background:${getColor(speaker)}"></span><span class="critical-stat-name">${esc(speaker)}</span><span>クリティカル ${critical}回、ファンブル ${fumble}回</span></summary><div class="critical-preview-list">${criticalPreviewHtml(entries, speaker)}</div></details>`;
+    ui.criticalRows.appendChild(row);
+  });
+  ui.criticalStats.style.display = stats.length ? "block" : "none";
 }
 
 ui.controls.addEventListener("click", (e) => {
@@ -546,6 +723,7 @@ ui.controls.addEventListener("click", (e) => {
           (state.activeChar === "all" && x.dataset.filter === "all"),
       ),
     );
+  ui.charFilterMenu.open = false;
   applyFilters();
 });
 
@@ -553,6 +731,8 @@ ui.controls.addEventListener("click", (e) => {
 function applyFilters() {
   const filteringTab = state.activeTab !== "all";
   const filteringChar = state.activeChar !== "all";
+  ui.logArea.classList.toggle("showing-all", !filteringTab);
+  ui.logArea.classList.toggle("official-log", state.sourceMode === "official");
 
   document.querySelectorAll(".entry-wrapper").forEach((el) => {
     const tabHidden = filteringTab && el.dataset.entryTab !== state.activeTab;
@@ -572,7 +752,8 @@ function applyFilters() {
 
 /* ─── GM/KP 名称設定パネル ─── */
 function buildGMPanel(rawNames) {
-  ui.gmRows.innerHTML = "";
+  ui.gmRows.innerHTML =
+    '<p class="panel-help">GM/KPと設定された発言者の発言はキャラクターと異なる文章表示に設定されます。結果としてキャラクターとそれ以外の情報が見分けやすくなり、ログが読みやすくなります。</p>';
 
   /* デフォルトGM名 ＋ ログの発言者名 ＋ 手動追加名 を重複なしで統合
      デフォルト名を先頭に置くことでパネル上部に表示される */
@@ -663,7 +844,8 @@ function buildIconPanel(entries) {
       entries.filter((e) => e.type === "pc").map((e) => e.speaker),
     ),
   ];
-  ui.iconRows.innerHTML = "";
+  ui.iconRows.innerHTML =
+    '<p class="panel-help">既存のアイコンを上書きして差し替えたり、既存のキャラクターコマの色を上書きして変更できます。</p>';
   speakers.forEach((sp) => {
     const row = document.createElement("div");
     row.className = "icon-row";
@@ -752,6 +934,7 @@ function render() {
   renderEntries(state.entries);
   buildTabBar(state.entries);
   buildCharFilters(state.entries);
+  buildCriticalStats(state.entries);
   buildGMPanel(state.allUniqueRawNames);
   buildIconPanel(state.entries);
   applyFilters();
@@ -760,6 +943,7 @@ function render() {
 /* ─── ファイル読み込み ─── */
 /* isNewFile=true: 新規ファイルで全リセット / false: GM設定変更による再処理 */
 function processHTML(html, isNewFile = true) {
+  state.sourceMode = "legacy";
   state.entries = parseLog(html);
   if (!state.entries.length) return;
 
@@ -775,6 +959,8 @@ function processHTML(html, isNewFile = true) {
     state.activeTab = "all";
     state.activeChar = "all";
     state.rawHtml = html; // 再処理用に保持
+    state.rawOfficialFiles = [];
+    state.mainTab = "_";
   }
 
   /* ログのカラーコードを優先使用（同名キャラは初出カラーを使用、isNewFile=false では既存カラーを保持） */
@@ -790,18 +976,156 @@ function processHTML(html, isNewFile = true) {
   render();
 }
 
-/* GM/PC設定変更後の再処理（カラー・アイコン・スチルは保持） */
-function reprocess() {
-  if (state.rawHtml) processHTML(state.rawHtml, false);
+function processOfficialFiles(files, isNewFile = true) {
+  state.sourceMode = "official";
+  if (isNewFile) {
+    Object.keys(state.colors).forEach((k) => delete state.colors[k]);
+    Object.keys(state.images).forEach((k) => delete state.images[k]);
+    Object.keys(state.stills).forEach((k) => delete state.stills[k]);
+    userGmNames.clear();
+    userPcNames.clear();
+    customAddedNames.length = 0;
+    state.colorIdx = 0;
+    state.activeTab = "all";
+    state.activeChar = "all";
+    state.rawOfficialFiles = files;
+    state.rawHtml = "";
+  }
+  state.entries = parseOfficialLogs(files);
+  if (!state.entries.length) {
+    alert("公式HTMLログ内にメッセージが見つかりませんでした。");
+    return;
+  }
+  state.entries.filter((e) => e.type === "pc").forEach((e) => {
+    if (!state.images[e.speaker] && e.image) state.images[e.speaker] = e.image;
+    if (!state.colors[e.speaker]) {
+      state.colors[e.speaker] = e.color || PALETTE[state.colorIdx++ % PALETTE.length];
+    }
+  });
+  render();
 }
 
-ui.fileInput.addEventListener("change", (e) => {
-  const f = e.target.files[0];
-  if (!f) return;
+/* GM/PC設定変更後の再処理（カラー・アイコン・スチルは保持） */
+function reprocess() {
+  if (state.sourceMode === "official" && state.rawOfficialFiles.length) {
+    processOfficialFiles(state.rawOfficialFiles, false);
+  } else if (state.rawHtml) {
+    processHTML(state.rawHtml, false);
+  }
+}
+
+function loadJSZip() {
+  if (window.JSZip) return Promise.resolve(window.JSZip);
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+    script.onload = () => window.JSZip ? resolve(window.JSZip) : reject(new Error("ZIPライブラリを初期化できませんでした"));
+    script.onerror = () => reject(new Error("ZIPの読み込みにはインターネット接続が必要です。展開済みHTML一式ならオフラインでも読み込めます。"));
+    document.head.appendChild(script);
+  });
+}
+
+/* ログ用途として十分な上限。圧縮爆弾や誤選択によるメモリ消費を防ぐ。 */
+const MAX_ZIP_BYTES = 20 * 1024 * 1024;
+const MAX_HTML_FILES = 50;
+const MAX_EXTRACTED_LOG_BYTES = 30 * 1024 * 1024;
+
+async function readOfficialFiles(selected) {
+  const htmlFiles = [];
+  let totalBytes = 0;
+  let htmlCount = 0;
+  for (const file of selected) {
+    if (/\.zip$/i.test(file.name)) {
+      if (file.size > MAX_ZIP_BYTES) {
+        throw new Error("ZIPが20MiBを超えています。ログZIPとしては大きすぎるため読み込みを中止しました");
+      }
+      const JSZip = await loadJSZip();
+      const zip = await JSZip.loadAsync(file);
+      const entries = Object.values(zip.files).filter((entry) => !entry.dir && /\.html?$/i.test(entry.name));
+      if (htmlCount + entries.length > MAX_HTML_FILES) {
+        throw new Error("HTMLファイルが50件を超えています");
+      }
+      const declaredBytes = entries.reduce(
+        (sum, entry) => sum + (entry._data?.uncompressedSize || 0),
+        0,
+      );
+      if (declaredBytes > MAX_EXTRACTED_LOG_BYTES) {
+        throw new Error("展開後のHTML合計が30MiBを超えています");
+      }
+      for (const entry of entries) {
+        const html = await entry.async("text");
+        totalBytes += new Blob([html]).size;
+        if (totalBytes > MAX_EXTRACTED_LOG_BYTES) {
+          throw new Error("展開後のHTML合計が30MiBを超えています");
+        }
+        htmlCount++;
+        htmlFiles.push({ name: entry.name.split("/").pop(), html });
+      }
+    } else if (/\.html?$/i.test(file.name)) {
+      if (++htmlCount > MAX_HTML_FILES) throw new Error("HTMLファイルが50件を超えています");
+      if (file.size > MAX_EXTRACTED_LOG_BYTES) throw new Error("HTMLが30MiBを超えています");
+      totalBytes += file.size;
+      if (totalBytes > MAX_EXTRACTED_LOG_BYTES) throw new Error("HTML合計が30MiBを超えています");
+      htmlFiles.push({ name: file.name, html: await file.text() });
+    }
+  }
+  if (!htmlFiles.length) throw new Error("ZIP内または選択したファイルにHTMLログがありません");
+  return htmlFiles;
+}
+
+function setSourceMode(mode, clearInput = false) {
+  state.sourceMode = mode;
+  ui.sourceModeButtons.forEach((button) =>
+    button.classList.toggle("active", button.dataset.mode === mode),
+  );
+  /* 自動判別を妨げないよう、どちらの形式でも選択できる状態を保つ */
+  ui.fileInput.accept = ".zip,.html,.htm";
+  ui.fileInput.multiple = true;
+  const official = mode === "official";
+  ui.dropZoneText.textContent = official
+    ? "公式HTMLログのZIP、または展開済みHTML一式をドロップ／選択"
+    : "従来ログをドロップ、またはクリックして選択";
+  ui.dropZoneHint.textContent = official
+    ? ".zip / 複数の .html / .htm に対応（形式は自動判別）"
+    : ".html / .htm に対応（形式は自動判別）";
+  if (clearInput) ui.fileInput.value = "";
+}
+
+async function detectLogMode(selected) {
+  if (selected.some((file) => /\.zip$/i.test(file.name))) return "official";
+  const firstHtml = selected.find((file) => /\.html?$/i.test(file.name));
+  if (!firstHtml) return state.sourceMode;
+  const html = await firstHtml.text();
+  /* 公式形式は article.message と data-channel を持つ。従来ログのp/span形式とは区別可能。 */
+  return /<article\b(?=[^>]*\bdata-channel\s*=)(?=[^>]*\bclass\s*=\s*["'][^"']*\bmessage\b)/i.test(html)
+    ? "official"
+    : "legacy";
+}
+
+async function loadFiles(files) {
+  const selected = [...files];
+  if (!selected.length) return;
+  const detectedMode = await detectLogMode(selected);
+  setSourceMode(detectedMode);
+  if (detectedMode === "official") {
+    try {
+      const officialFiles = await readOfficialFiles(selected);
+      state.loadedFileName = officialFiles[0]?.name.replace(/\.[^.]+$/, "") || "ccfolia_log";
+      processOfficialFiles(officialFiles, true);
+    } catch (err) {
+      alert(`公式HTMLログを読み込めませんでした: ${err.message}`);
+    }
+    return;
+  }
+  const f = selected[0];
   state.loadedFileName = f.name.replace(/\.[^.]+$/, "");
   const r = new FileReader();
   r.onload = (ev) => processHTML(ev.target.result, true);
   r.readAsText(f, "utf-8");
+}
+
+ui.fileInput.addEventListener("change", (e) => {
+  loadFiles(e.target.files);
 });
 ui.dropZone.addEventListener("dragover", (e) => {
   e.preventDefault();
@@ -813,12 +1137,13 @@ ui.dropZone.addEventListener("dragleave", () =>
 ui.dropZone.addEventListener("drop", (e) => {
   e.preventDefault();
   ui.dropZone.classList.remove("dragover");
-  const f = e.dataTransfer.files[0];
-  if (!f) return;
-  state.loadedFileName = f.name.replace(/\.[^.]+$/, "");
-  const r = new FileReader();
-  r.onload = (ev) => processHTML(ev.target.result, true);
-  r.readAsText(f, "utf-8");
+  loadFiles(e.dataTransfer.files);
+});
+
+ui.sourceModeButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    setSourceMode(button.dataset.mode, true);
+  });
 });
 
 /* ─── テーマ切り替え ─── */
@@ -827,6 +1152,40 @@ ui.themeToggle.addEventListener("click", () => {
   document.documentElement.dataset.theme = isDark ? "light" : "dark";
   ui.themeToggle.textContent = isDark ? "🌙" : "☀";
 });
+
+/* ─── 文字サイズ ─── */
+ui.fontSizeButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const size = button.dataset.fontSize;
+    document.documentElement.dataset.fontSize = size;
+    ui.fontSizeButtons.forEach((item) =>
+      item.classList.toggle("active", item === button),
+    );
+  });
+});
+
+/* ─── ページ上部へ戻る ─── */
+function updateBackToTop() {
+  if (!ui.backToTop) return;
+  /* ブラウザや埋め込みプレビューでスクロール要素が異なる場合にも対応 */
+  const scrollTop = Math.max(
+    window.scrollY || 0,
+    document.documentElement.scrollTop || 0,
+    document.body.scrollTop || 0,
+  );
+  ui.backToTop.classList.toggle("visible", scrollTop > 240);
+}
+window.addEventListener("scroll", updateBackToTop, { passive: true });
+document.addEventListener("scroll", updateBackToTop, { passive: true, capture: true });
+window.addEventListener("resize", updateBackToTop, { passive: true });
+requestAnimationFrame(updateBackToTop);
+if (ui.backToTop) {
+  ui.backToTop.addEventListener("click", () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  });
+}
 
 /* ─── テキストエクスポート ─── */
 ui.exportBtn.addEventListener("click", () => {
@@ -850,17 +1209,17 @@ ui.exportBtn.addEventListener("click", () => {
   a.click();
 });
 
-/* ─── HTMLエクスポート（キャラ画像がある場合はZIP） ─── */
+/* ─── HTMLエクスポート（画像もData URLで埋め込む単一HTML） ─── */
 ui.exportHtmlBtn.addEventListener("click", async () => {
-    const hasCharImages = Object.keys(state.images).length > 0;
-    const hasStills = Object.keys(state.stills).length > 0;
-    const needsZip = hasCharImages || hasStills;
-    function safeName(s) {
-      return s.replace(/[\\/:*?"<>|]/g, "_");
-    }
-    function imgExt(d) {
-      return d.match(/\/(\w+);/)?.[1] || "png";
-    }
+    /* 同じBase64アイコンを発言ごとに複製せず、CSS定義を一度だけ出力する。 */
+    const exportAvatarClasses = new Map();
+    const exportAvatarCss = Object.entries(state.images)
+      .map(([speaker, dataUrl], index) => {
+        const className = `export-avatar-${index}`;
+        exportAvatarClasses.set(speaker, className);
+        return `.avatar.${className}{background-image:url("${dataUrl}");background-size:cover;background-position:center;background-repeat:no-repeat;}`;
+      })
+      .join("\n");
 
     /* 画面DOMをクローンしてエクスポート用に変換する。
        makeEntryEl が唯一の構造定義となり、二重管理を排除する */
@@ -869,18 +1228,14 @@ ui.exportHtmlBtn.addEventListener("click", async () => {
       clone.classList.remove("hidden");
       // 操作系ボタンはエクスポート不要
       clone.querySelectorAll(".add-still-btn, .remove-still-btn").forEach(b => b.remove());
-      // アバター画像: DataURL → images/ファイル参照に差し替え
-      if (entry.type === "pc" && state.images[entry.speaker]) {
-        const img = clone.querySelector(".avatar img");
-        if (img) img.src = `images/${safeName(entry.speaker)}.${imgExt(state.images[entry.speaker])}`;
-      }
-      // スチル: stills/ フォルダへのパスに差し替え
-      const slot = clone.querySelector(".still-slot");
-      if (slot && state.stills[idx]) {
-        const ext = imgExt(state.stills[idx].dataUrl);
-        const stillPath = `stills/${idx}.${ext}`;
-        slot.innerHTML = `<a href="${stillPath}" target="_blank"><img class="still-img" src="${stillPath}" alt="スチル"></a>`;
-        slot.classList.add("has-still");
+      /* imgのData URLは各発言に重複するため、共有CSSクラスへ置き換える */
+      if (entry.type === "pc" && exportAvatarClasses.has(entry.speaker)) {
+        const avatar = clone.querySelector(".avatar");
+        if (avatar) {
+          avatar.classList.add(exportAvatarClasses.get(entry.speaker));
+          avatar.innerHTML = "";
+          avatar.style.background = "";
+        }
       }
       return clone.outerHTML;
     }
@@ -900,7 +1255,7 @@ ui.exportHtmlBtn.addEventListener("click", async () => {
           expTabs
             .map(
               (t) =>
-                `<button class="tab-btn" data-tab="${t}">${t === "_" ? "(未分類)" : t}</button>`,
+                `<button class="tab-btn" data-tab="${escAttr(t)}">${t === "_" ? "(未分類)" : esc(t)}</button>`,
             )
             .join("")
         : "";
@@ -908,7 +1263,13 @@ ui.exportHtmlBtn.addEventListener("click", async () => {
     const charBtnsHtml = expSpeakers
       .map(
         (sp) =>
-          `<button class="filter-btn" data-filter="${esc(sp)}"><span class="dot" style="background:${getColor(sp)}"></span>${esc(sp)}</button>`,
+          `<button class="filter-btn" data-filter="${escAttr(sp)}"><span class="dot" style="background:${getColor(sp)}"></span>${esc(sp)}</button>`,
+      )
+      .join("");
+    const criticalRowsHtml = criticalFumbleStats(state.entries)
+      .map(
+        ({ speaker, critical, fumble }) =>
+          `<div class="critical-stat-row"><details class="critical-char-preview"><summary><span class="dot" style="background:${getColor(speaker)}"></span><span class="critical-stat-name">${esc(speaker)}</span><span>クリティカル ${critical}回、ファンブル ${fumble}回</span></summary><div class="critical-preview-list">${criticalPreviewHtml(state.entries, speaker)}</div></details></div>`,
       )
       .join("");
 
@@ -919,20 +1280,25 @@ ui.exportHtmlBtn.addEventListener("click", async () => {
       `\n</div>`;
 
     /* エクスポート用CSS（ダーク＋ライト両テーマ、スチル含む） */
-    const css = `
+    const fallbackCss = `
 :root{--bg:#111010;--surface:#1c1b1a;--surface2:#252321;--border:rgba(255,255,255,0.1);--border-mid:rgba(255,255,255,0.18);--text:#f0ebe3;--text-sub:#b8b0a6;--muted:#6a6460;--accent:#d4a96a;--gm-bg:#161616;--gm-text:#a8a8a4;--gm-border:#383838;--gm-label:#686866;--sys-bg:#181818;--sys-text:#909090;--sys-border:#333;--dialogue:#f5e8d0;--thought:#c4b8cc;}
+html[data-font-size="small"]{font-size:16px;}html[data-font-size="medium"]{font-size:18px;}html[data-font-size="large"]{font-size:20px;}
 [data-theme="light"]{--bg:#f5f3ef;--surface:#ffffff;--surface2:#eeebe5;--border:rgba(0,0,0,0.1);--border-mid:rgba(0,0,0,0.22);--text:#1a1815;--text-sub:#4a4540;--muted:#8a8480;--accent:#b07818;--gm-bg:#f0ede8;--gm-text:#4a4845;--gm-border:#c8bfb5;--gm-label:#8a8480;--sys-bg:#ece9e4;--sys-text:#606060;--sys-border:#b8b0a8;--dialogue:#7a3c18;--thought:#5a3880;}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:var(--bg);color:var(--text);font-family:'Hiragino Sans','Yu Gothic','YuGothic','Meiryo',sans-serif;min-height:100vh;padding:2rem 1rem;transition:background 0.2s,color 0.2s;}
 .wrapper{max-width:860px;margin:0 auto;width:100%;}
 .theme-toggle{position:fixed;top:1rem;right:1rem;width:36px;height:36px;border-radius:50%;border:1px solid var(--border-mid);background:var(--surface);color:var(--text-sub);cursor:pointer;font-size:1.05rem;display:flex;align-items:center;justify-content:center;transition:all .15s;z-index:100;}
 .theme-toggle:hover{border-color:var(--accent);color:var(--accent);}
+.back-to-top{position:fixed;right:1.25rem;bottom:1.25rem;z-index:100;width:44px;height:44px;border:1px solid var(--border-mid);border-radius:50%;background:var(--surface);color:var(--accent);box-shadow:0 3px 12px rgba(0,0,0,.22);cursor:pointer;font:700 1.35rem/1 sans-serif;opacity:0;pointer-events:none;transform:translateY(10px);transition:opacity .18s,transform .18s,border-color .18s;}.back-to-top.visible{opacity:1;pointer-events:auto;transform:translateY(0);}.back-to-top:hover{border-color:var(--accent);}
+.font-size-controls{display:flex;align-items:center;gap:.25rem;margin:0 0 1rem;color:var(--muted);font-size:.72rem;}.font-size-controls>span{margin-right:.2rem;}.font-size-btn{min-width:1.8rem;padding:.18rem .35rem;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text-sub);font:inherit;cursor:pointer;}.font-size-btn.active{border-color:var(--accent);color:var(--accent);}
 #tab-bar{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:1rem;padding-bottom:.8rem;border-bottom:1px solid var(--border);}
 #tab-bar:empty{display:none;}
 .tab-btn{padding:.28rem .85rem;border-radius:6px 6px 0 0;border:1px solid var(--border);border-bottom:none;background:var(--surface2);color:var(--muted);font-size:.8rem;font-family:inherit;cursor:pointer;transition:all .15s;user-select:none;}
 .tab-btn.active{background:var(--surface);color:var(--accent);border-color:var(--accent);}
 .tab-btn:hover:not(.active){color:var(--text-sub);border-color:var(--border-mid);}
 .controls{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:1.2rem;}
+.char-filter-menu{position:relative;min-width:190px;}.char-filter-menu summary{display:flex;align-items:center;gap:.45rem;padding:.4rem .8rem;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text-sub);font-size:.82rem;cursor:pointer;list-style:none;user-select:none;}.char-filter-menu summary::-webkit-details-marker{display:none;}.char-filter-menu summary::before{content:'▼';color:var(--accent);font-size:.68rem;transition:transform .15s;}.char-filter-menu[open] summary{border-color:var(--accent);border-radius:6px 6px 0 0;}.char-filter-menu[open] summary::before{transform:rotate(180deg);}.char-filter-options{position:absolute;top:calc(100% - 1px);left:0;z-index:30;display:flex;flex-wrap:wrap;gap:.45rem;width:min(440px,calc(100vw - 2rem));padding:.7rem;border:1px solid var(--accent);border-radius:0 6px 6px 6px;background:var(--surface);box-shadow:0 8px 20px rgba(0,0,0,.2);}
+.critical-stats{margin:0 0 1.4rem;padding:1rem 1.2rem;border:1px solid var(--border);border-radius:8px;background:var(--surface);}.critical-stats>summary{display:flex;align-items:center;gap:6px;color:var(--text-sub);font-size:.82rem;cursor:pointer;list-style:none;user-select:none;}.critical-stats>summary::-webkit-details-marker,.critical-char-preview>summary::-webkit-details-marker{display:none;}.critical-stats>summary::before{content:'▶';font-size:.6rem;transition:transform .15s;}.critical-stats[open]>summary::before{transform:rotate(90deg);}.critical-stats .panel-body,.critical-preview-list{display:flex;flex-direction:column;gap:.6rem;margin-top:.9rem;}.critical-stat-row{display:flex;flex-wrap:wrap;align-items:center;gap:.45rem;color:var(--text-sub);font-size:.82rem;}.critical-stat-row .dot{width:8px;height:8px;border-radius:50%;}.critical-stat-name{min-width:130px;font-weight:600;}.critical-char-preview{width:100%;}.critical-char-preview>summary{display:flex;align-items:center;gap:.45rem;cursor:pointer;list-style:none;}.critical-char-preview>summary::before{content:'▷';font-size:.6rem;}.critical-char-preview[open]>summary::before{content:'▽';}.critical-preview-list{gap:.45rem;margin:.65rem 0 .15rem 1rem;padding-left:.8rem;border-left:2px solid var(--border-mid);}.critical-preview-entry{padding:.55rem .7rem;border-radius:4px;background:var(--surface2);color:var(--text-sub);font-size:.84rem;line-height:1.7;word-break:break-all;}.critical-preview-kind{display:inline-block;margin-right:.45rem;color:var(--accent);font-size:.7rem;font-weight:700;}
 .filter-btn{display:inline-flex;align-items:center;gap:6px;padding:.28rem .85rem;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text-sub);font-size:.8rem;cursor:pointer;transition:all .15s;font-family:inherit;user-select:none;}
 .filter-btn .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
 .filter-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(212,169,106,.1);}
@@ -950,6 +1316,7 @@ body{background:var(--bg);color:var(--text);font-family:'Hiragino Sans','Yu Goth
 .entry:hover{background:rgba(128,128,128,.03);}
 .avatar{width:38px;min-width:38px;height:38px;border-radius:50%;margin-right:1rem;margin-top:2px;flex-shrink:0;overflow:hidden;}
 .avatar img{width:100%;height:100%;object-fit:cover;display:block;}
+${exportAvatarCss}
 .bubble{flex:1;min-width:0;}
 .speaker-name{font-size:.8rem;font-weight:600;margin-bottom:.35rem;letter-spacing:.02em;}
 .speech-text{font-size:1rem;line-height:1.9;color:var(--text);word-break:break-all;}
@@ -970,7 +1337,18 @@ body{background:var(--bg);color:var(--text);font-family:'Hiragino Sans','Yu Goth
 .entry.dice .speech-text{font-family:'Courier New',monospace;font-size:.85rem;color:var(--text-sub);}
 .entry.gm.dice .gm-text{font-family:'Courier New',monospace;font-size:.85rem;color:var(--muted);}
 .entry-wrapper.hidden{display:none!important;}
-.entry.sys.hidden{display:none!important;}`;
+.entry.sys.hidden{display:none!important;}
+.log-area.official-log .avatar{border-radius:0;}
+.log-area.showing-all .entry-wrapper.from-subtab{margin:.35rem 0;padding:.35rem .8rem .35rem 1rem;border-left:6px solid var(--accent);border-radius:5px;background:var(--surface2);box-shadow:inset 0 0 0 1px var(--border-mid);}
+.log-area.showing-all .entry.sys.from-subtab{border-left:6px solid var(--accent);background:var(--surface2);}
+.tab-context{display:none;}.log-area.showing-all .tab-context{display:inline-block;margin:0 0 .45rem;padding:.18rem .6rem;border-radius:3px;background:var(--accent);color:var(--bg);font-size:.72rem;font-weight:700;letter-spacing:.08em;line-height:1.25;}`;
+    const exportCssOverrides = `
+#tab-bar{display:flex;}
+#controls{display:flex;}
+.settings-panel.export-critical-stats{display:block;}
+#themeToggle{position:fixed;top:1rem;right:1rem;z-index:100;}
+`;
+    const css = `${getRuntimeStylesheetCss() || fallbackCss}\n${exportCssOverrides}`;
 
     /* エクスポート用JS（テーマ切り替え＋タブ＋キャラフィルター） */
     const js = `
@@ -979,6 +1357,8 @@ body{background:var(--bg);color:var(--text);font-family:'Hiragino Sans','Yu Goth
   function applyFilters(){
     var filteringTab=activeTab!=='all';
     var filteringChar=activeChar!=='all';
+    var logArea=document.querySelector('.log-area');
+    if(logArea)logArea.classList.toggle('showing-all',!filteringTab);
     document.querySelectorAll('.entry-wrapper').forEach(function(el){
 var tabHidden=filteringTab&&el.dataset.entryTab!==activeTab;
 var type=el.dataset.entryType;
@@ -1006,6 +1386,7 @@ el.classList.toggle('hidden',tabHidden||filteringChar);
     controls.querySelectorAll('.filter-btn,.filter-all').forEach(function(x){
 x.classList.toggle('active',(x.dataset.filter||'all')===activeChar);
     });
+    var menu=b.closest('.char-filter-menu');if(menu)menu.open=false;
     applyFilters();
   });
   var toggle=document.getElementById('themeToggle');
@@ -1014,12 +1395,19 @@ x.classList.toggle('active',(x.dataset.filter||'all')===activeChar);
     document.documentElement.dataset.theme=isDark?'light':'dark';
     toggle.textContent=isDark?'🌙':'☀';
   });
+  document.querySelectorAll('.font-size-btn').forEach(function(button){button.addEventListener('click',function(){document.documentElement.dataset.fontSize=button.dataset.fontSize;document.querySelectorAll('.font-size-btn').forEach(function(item){item.classList.toggle('active',item===button);});});});
+  var backToTop=document.getElementById('backToTop');
+  function updateBackToTop(){if(!backToTop)return;var scrollTop=Math.max(window.scrollY||0,document.documentElement.scrollTop||0,document.body.scrollTop||0);backToTop.classList.toggle('visible',scrollTop>240);}
+  window.addEventListener('scroll',updateBackToTop,{passive:true});
+  document.addEventListener('scroll',updateBackToTop,{passive:true,capture:true});window.addEventListener('resize',updateBackToTop,{passive:true});requestAnimationFrame(updateBackToTop);
+  if(backToTop)backToTop.addEventListener('click',function(){window.scrollTo({top:0,behavior:'smooth'});document.documentElement.scrollTop=0;document.body.scrollTop=0;});
 })();`;
 
     /* 現在のテーマを引き継いでエクスポート */
     const currentTheme = document.documentElement.dataset.theme || "dark";
+    const currentFontSize = document.documentElement.dataset.fontSize || "small";
     const out = `<!DOCTYPE html>
-<html lang="ja" data-theme="${currentTheme}">
+<html lang="ja" data-theme="${currentTheme}" data-font-size="${currentFontSize}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
@@ -1028,13 +1416,21 @@ x.classList.toggle('active',(x.dataset.filter||'all')===activeChar);
 </head>
 <body>
 <button class="theme-toggle" id="themeToggle">${currentTheme === "dark" ? "☀" : "🌙"}</button>
+<button class="back-to-top" id="backToTop" type="button" title="ページ上部へ戻る" aria-label="ページ上部へ戻る">↑</button>
 <div class="wrapper">
+<div class="font-size-controls" role="group" aria-label="文字サイズ"><span>文字サイズ</span><button class="font-size-btn${currentFontSize === "small" ? " active" : ""}" type="button" data-font-size="small">小</button><button class="font-size-btn${currentFontSize === "medium" ? " active" : ""}" type="button" data-font-size="medium">中</button><button class="font-size-btn${currentFontSize === "large" ? " active" : ""}" type="button" data-font-size="large">大</button></div>
 ${expTabs.length > 1 ? `<div id="tab-bar">${tabBtnsHtml}</div>` : '<div id="tab-bar"></div>'}
 <div class="controls" id="controls">
-<button class="filter-all active" data-filter="all">すべてのキャラ</button>
+<details class="char-filter-menu">
+<summary>発言キャラを絞り込む</summary>
+<div class="char-filter-options">
+<button class="filter-btn active" data-filter="all">すべてのキャラ</button>
 ${charBtnsHtml}
 </div>
-<div class="log-area">
+</details>
+</div>
+${criticalRowsHtml ? `<details class="settings-panel critical-stats export-critical-stats"><summary>クリファン回数</summary><div class="panel-body">${criticalRowsHtml}</div></details>` : ""}
+<div class="log-area showing-all${state.sourceMode === "official" ? " official-log" : ""}">
 ${bodyHtml}
 </div>
 </div>
@@ -1055,70 +1451,9 @@ ${bodyHtml}
       return `${base}[整形済]${ts}`;
     }
 
-    if (!needsZip) {
-      const blob = new Blob([out], { type: "text/html;charset=utf-8" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `${exportBaseName()}.html`;
-      a.click();
-      return;
-    }
-
-    /* 画像あり: ZIP として出力 */
-    const btn = ui.exportHtmlBtn;
-    btn.textContent = "準備中...";
-    btn.disabled = true;
-    try {
-      await new Promise((res, rej) => {
-        if (window.JSZip) {
-          res();
-          return;
-        }
-        const s = document.createElement("script");
-        s.src =
-          "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
-        s.onload = () =>
-          requestAnimationFrame(() =>
-            window.JSZip
-              ? res()
-              : rej(new Error("JSZip の初期化に失敗しました")),
-          );
-        s.onerror = () =>
-          rej(new Error("JSZip の読み込みに失敗しました"));
-        document.head.appendChild(s);
-      });
-      const expName = exportBaseName();
-      const zip = new JSZip();
-      zip.file(`${expName}.html`, out);
-      if (hasCharImages) {
-        const imgF = zip.folder("images");
-        for (const [name, dataUrl] of Object.entries(state.images)) {
-          const [hdr, b64] = dataUrl.split(",");
-          const ext = hdr.match(/\/(\w+);/)?.[1] || "png";
-          imgF.file(`${safeName(name)}.${ext}`, b64, { base64: true });
-        }
-      }
-      if (hasStills) {
-        const stillF = zip.folder("stills");
-        for (const [idx, { dataUrl }] of Object.entries(state.stills)) {
-          const [hdr, b64] = dataUrl.split(",");
-          const ext = hdr.match(/\/(\w+);/)?.[1] || "png";
-          stillF.file(`${idx}.${ext}`, b64, { base64: true });
-        }
-      }
-      const zb = await zip.generateAsync({
-        type: "blob",
-        compression: "DEFLATE",
-        compressionOptions: { level: 6 },
-      });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(zb);
-      a.download = `${expName}.zip`;
-      a.click();
-    } catch (e) {
-      alert("エクスポートに失敗しました: " + e.message);
-    } finally {
-      btn.textContent = "HTMLで保存";
-      btn.disabled = false;
-    }
+    const blob = new Blob([out], { type: "text/html;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${exportBaseName()}.html`;
+    a.click();
   });

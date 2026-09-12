@@ -1,9 +1,9 @@
 ﻿<!doctype html>
-<html lang="ja" data-theme="dark">
+<html lang="ja" data-theme="dark" data-font-size="small">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ココフォリア ログ整形ツールv0.1</title>
+    <title>ココフォリア ログ整形ツール v0.2</title>
     <link rel="stylesheet" href="ccfolia_formatter.css" />
   </head>
   <body>
@@ -11,10 +11,16 @@
       <!-- ヘッダー -->
       <div class="header-row">
         <div>
-          <h1>ココフォリア ログ整形ツール v0.1</h1>
+          <h1>ココフォリア ログ整形ツール v0.2</h1>
           <p class="subtitle">
             HTMLログファイルをドロップするだけで読みやすく整形します @magiaigam
           </p>
+          <div class="font-size-controls" role="group" aria-label="文字サイズ">
+            <span>文字サイズ</span>
+            <button class="font-size-btn active" type="button" data-font-size="small">小</button>
+            <button class="font-size-btn" type="button" data-font-size="medium">中</button>
+            <button class="font-size-btn" type="button" data-font-size="large">大</button>
+          </div>
         </div>
         <!-- ライト/ダーク切り替え：☀でライトへ、🌙でダークへ -->
         <button
@@ -26,12 +32,22 @@
         </button>
       </div>
 
+      <!-- 読み込み形式の切り替え -->
+      <div class="source-mode" role="radiogroup" aria-label="ログ形式">
+        <button class="source-mode-btn" type="button" data-mode="legacy">
+          従来ログ
+        </button>
+        <button class="source-mode-btn active" type="button" data-mode="official">
+          公式HTMLログ（ZIP）
+        </button>
+      </div>
+
       <!-- ファイル読み込みゾーン -->
       <div class="drop-zone" id="dropZone">
-        <input type="file" id="fileInput" accept=".html,.htm" />
+        <input type="file" id="fileInput" accept=".zip,.html,.htm" multiple />
         <div class="dz-icon">📂</div>
-        <p>ここにHTMLログをドロップ、またはクリックして選択</p>
-        <p class="hint">.html / .htm ファイルに対応</p>
+        <p id="dropZoneText">公式HTMLログのZIP、または展開済みHTML一式をドロップ／選択</p>
+        <p class="hint" id="dropZoneHint">.zip / 複数の .html / .htm に対応（形式は自動判別）</p>
       </div>
 
       <!-- タブバー（複数タブある場合のみ表示） -->
@@ -39,10 +55,15 @@
 
       <!-- キャラフィルター＋エクスポートボタン -->
       <div class="controls" id="controls">
-        <button class="filter-btn active" data-filter="all">
-          すべてのキャラ
-        </button>
-        <div id="char-filters" style="display: contents"></div>
+        <details class="char-filter-menu" id="charFilterMenu">
+          <summary>発言キャラを絞り込む</summary>
+          <div class="char-filter-options">
+            <button class="filter-btn active" data-filter="all">
+              すべてのキャラ
+            </button>
+            <div id="char-filters"></div>
+          </div>
+        </details>
         <div class="filter-sep"></div>
         <div class="btn-right">
           <button class="export-btn" id="exportBtn">テキストで保存</button>
@@ -50,13 +71,19 @@
         </div>
       </div>
 
-      <!-- 発言数統計 -->
-      <div id="stats"></div>
+      <!-- クリティカル／ファンブル統計 -->
+      <details class="settings-panel critical-stats" id="criticalStats">
+        <summary>クリファン回数</summary>
+        <div class="panel-body" id="criticalRows"></div>
+      </details>
 
       <!-- GM/KP 名称設定パネル（ログ読み込み後に表示） -->
       <details class="settings-panel" id="gm-panel">
         <summary>GM/KP 名称設定</summary>
         <div class="panel-body" id="gm-rows">
+          <p class="panel-help">
+            GM/KPと設定された発言者の発言はキャラクターと異なる文章表示に設定されます。結果としてキャラクターとそれ以外の情報が見分けやすくなり、ログが読みやすくなります。
+          </p>
           <!-- buildGMPanel() によって動的に構築 -->
         </div>
       </details>
@@ -64,7 +91,11 @@
       <!-- キャラクター設定（アイコン・カラー変更） -->
       <details class="settings-panel" id="icon-panel">
         <summary>キャラクター設定（アイコン・カラー）</summary>
-        <div class="panel-body" id="icon-rows"></div>
+        <div class="panel-body" id="icon-rows">
+          <p class="panel-help">
+            既存のアイコンを上書きして差し替えたり、既存のキャラクターコマの色を上書きして変更できます。
+          </p>
+        </div>
       </details>
 
       <!-- ログ表示エリア -->
@@ -75,6 +106,10 @@
         </div>
       </div>
     </div>
+
+    <button class="back-to-top" id="backToTop" type="button" title="ページ上部へ戻る" aria-label="ページ上部へ戻る">
+      ↑
+    </button>
 
     <script src="ccfolia_formatter.js"></script>
   </body>

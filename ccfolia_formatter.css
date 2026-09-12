@@ -19,6 +19,9 @@
   --dialogue: #f5e8d0;
   --thought: #c4b8cc;
 }
+html[data-font-size="small"] { font-size: 16px; }
+html[data-font-size="medium"] { font-size: 18px; }
+html[data-font-size="large"] { font-size: 20px; }
 /* ─── テーマ変数（ライト） ─── */
 [data-theme="light"] {
   --bg: #f5f3ef;
@@ -82,6 +85,52 @@ h1 {
   font-size: 0.82rem;
   color: var(--muted);
 }
+.font-size-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.65rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+.font-size-controls > span { margin-right: 0.2rem; }
+.font-size-btn {
+  min-width: 1.8rem;
+  padding: 0.18rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text-sub);
+  font: inherit;
+  cursor: pointer;
+}
+.font-size-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ─── 読み込み形式 ─── */
+.source-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0 0 0.75rem;
+}
+.source-mode-btn {
+  padding: 0.38rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.source-mode-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--surface);
+}
 
 /* ─── テーマ切り替えボタン ─── */
 .theme-toggle {
@@ -103,6 +152,35 @@ h1 {
 .theme-toggle:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* ─── ページ上部へ戻る ─── */
+.back-to-top {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 100;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border-mid);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  font: 700 1.35rem/1 sans-serif;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+  transition: opacity 0.18s, transform 0.18s, border-color 0.18s;
+}
+.back-to-top.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.back-to-top:hover {
+  border-color: var(--accent);
 }
 
 /* ─── ドロップゾーン ─── */
@@ -188,6 +266,58 @@ h1 {
   align-items: center;
   margin-bottom: 1.2rem;
 }
+.char-filter-menu {
+  position: relative;
+  min-width: 190px;
+}
+.char-filter-menu summary {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-sub);
+  font-size: 0.82rem;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.char-filter-menu summary::-webkit-details-marker {
+  display: none;
+}
+.char-filter-menu summary::before {
+  content: "▼";
+  color: var(--accent);
+  font-size: 0.68rem;
+  transition: transform 0.15s;
+}
+.char-filter-menu[open] summary {
+  border-color: var(--accent);
+  border-radius: 6px 6px 0 0;
+}
+.char-filter-menu[open] summary::before {
+  transform: rotate(180deg);
+}
+.char-filter-options {
+  position: absolute;
+  top: calc(100% - 1px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  width: min(440px, calc(100vw - 2rem));
+  padding: 0.7rem;
+  border: 1px solid var(--accent);
+  border-radius: 0 6px 6px 6px;
+  background: var(--surface);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+#char-filters {
+  display: contents;
+}
 .filter-btn {
   display: inline-flex;
   align-items: center;
@@ -257,24 +387,64 @@ h1 {
   background: rgba(122, 158, 200, 0.12);
 }
 
-/* ─── 統計 ─── */
-#stats {
-  font-size: 0.76rem;
-  color: var(--muted);
-  margin-bottom: 1rem;
+/* ─── クリティカル／ファンブル統計 ─── */
+.critical-stat-row {
   display: flex;
-  gap: 1.2rem;
   flex-wrap: wrap;
-}
-#stats span {
-  display: inline-flex;
-  gap: 5px;
   align-items: center;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  color: var(--text-sub);
 }
-#stats .dot {
+.critical-stat-row .dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+}
+.critical-stat-name {
+  min-width: 130px;
+  font-weight: 600;
+}
+.critical-char-preview {
+  width: 100%;
+}
+.critical-char-preview > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  list-style: none;
+}
+.critical-char-preview > summary::-webkit-details-marker { display: none; }
+.critical-char-preview > summary::before {
+  content: "▷";
+  color: var(--accent);
+  font-size: 0.6rem;
+}
+.critical-char-preview[open] > summary::before { content: "▽"; }
+.critical-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0.65rem 0 0.15rem 1rem;
+  padding-left: 0.8rem;
+  border-left: 2px solid var(--border-mid);
+}
+.critical-preview-entry {
+  padding: 0.55rem 0.7rem;
+  border-radius: 4px;
+  background: var(--surface2);
+  color: var(--text-sub);
+  font-size: 0.84rem;
+  line-height: 1.7;
+  word-break: break-all;
+}
+.critical-preview-kind {
+  display: inline-block;
+  margin-right: 0.45rem;
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 
 /* ─── 共通パネルスタイル（GM設定・キャラ設定） ─── */
@@ -286,7 +456,7 @@ h1 {
   margin-bottom: 1.4rem;
   display: none;
 }
-.settings-panel summary {
+.settings-panel > summary {
   font-size: 0.82rem;
   color: var(--text-sub);
   cursor: pointer;
@@ -296,12 +466,12 @@ h1 {
   align-items: center;
   gap: 6px;
 }
-.settings-panel summary::before {
+.settings-panel > summary::before {
   content: "▶";
   font-size: 0.6rem;
   transition: transform 0.15s;
 }
-.settings-panel[open] summary::before {
+.settings-panel[open] > summary::before {
   transform: rotate(90deg);
 }
 .settings-panel .panel-body {
@@ -309,6 +479,11 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+}
+.panel-help {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.65;
 }
 
 /* ─── GM/KP 名称設定パネル ─── */
@@ -462,6 +637,33 @@ h1 {
 .entry-wrapper {
   position: relative;
 }
+.log-area.showing-all .entry-wrapper.from-subtab {
+  margin: 0.35rem 0;
+  padding: 0.35rem 0.8rem 0.35rem 1rem;
+  border-left: 6px solid var(--accent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--surface2) 82%, transparent);
+  box-shadow: inset 0 0 0 1px var(--border-mid);
+}
+.log-area.showing-all .entry.sys.from-subtab {
+  border-left: 6px solid var(--accent);
+  background: color-mix(in srgb, var(--surface2) 82%, transparent);
+}
+.tab-context {
+  display: none;
+}
+.log-area.showing-all .tab-context {
+  display: inline-block;
+  margin: 0 0 0.45rem;
+  padding: 0.18rem 0.6rem;
+  border-radius: 3px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+}
 /* ホバーで表示するスチル追加ボタン */
 .add-still-btn {
   position: absolute;
@@ -561,6 +763,10 @@ h1 {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+/* 公式HTMLログのアイコンは元ログに合わせ、角丸なしの正方形で表示する */
+.log-area.official-log .avatar {
+  border-radius: 0;
 }
 .bubble {
   flex: 1;
