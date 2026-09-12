@@ -232,14 +232,11 @@ h1 {
   flex-wrap: wrap;
   gap: 0.4rem;
   margin-bottom: 1rem;
-  padding-bottom: 0.8rem;
-  border-bottom: 1px solid var(--border);
 }
 .tab-btn {
   padding: 0.28rem 0.85rem;
-  border-radius: 6px 6px 0 0;
+  border-radius: 999px;
   border: 1px solid var(--border);
-  border-bottom: none;
   background: var(--surface2);
   color: var(--muted);
   font-size: 0.8rem;
@@ -249,8 +246,8 @@ h1 {
   user-select: none;
 }
 .tab-btn.active {
-  background: var(--surface);
-  color: var(--accent);
+  background: var(--accent);
+  color: var(--bg);
   border-color: var(--accent);
 }
 .tab-btn:hover:not(.active) {

@@ -1291,10 +1291,10 @@ body{background:var(--bg);color:var(--text);font-family:'Hiragino Sans','Yu Goth
 .theme-toggle:hover{border-color:var(--accent);color:var(--accent);}
 .back-to-top{position:fixed;right:1.25rem;bottom:1.25rem;z-index:100;width:44px;height:44px;border:1px solid var(--border-mid);border-radius:50%;background:var(--surface);color:var(--accent);box-shadow:0 3px 12px rgba(0,0,0,.22);cursor:pointer;font:700 1.35rem/1 sans-serif;opacity:0;pointer-events:none;transform:translateY(10px);transition:opacity .18s,transform .18s,border-color .18s;}.back-to-top.visible{opacity:1;pointer-events:auto;transform:translateY(0);}.back-to-top:hover{border-color:var(--accent);}
 .font-size-controls{display:flex;align-items:center;gap:.25rem;margin:0 0 1rem;color:var(--muted);font-size:.72rem;}.font-size-controls>span{margin-right:.2rem;}.font-size-btn{min-width:1.8rem;padding:.18rem .35rem;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text-sub);font:inherit;cursor:pointer;}.font-size-btn.active{border-color:var(--accent);color:var(--accent);}
-#tab-bar{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:1rem;padding-bottom:.8rem;border-bottom:1px solid var(--border);}
+#tab-bar{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:1rem;}
 #tab-bar:empty{display:none;}
-.tab-btn{padding:.28rem .85rem;border-radius:6px 6px 0 0;border:1px solid var(--border);border-bottom:none;background:var(--surface2);color:var(--muted);font-size:.8rem;font-family:inherit;cursor:pointer;transition:all .15s;user-select:none;}
-.tab-btn.active{background:var(--surface);color:var(--accent);border-color:var(--accent);}
+.tab-btn{padding:.28rem .85rem;border-radius:999px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:.8rem;font-family:inherit;cursor:pointer;transition:all .15s;user-select:none;}
+.tab-btn.active{background:var(--accent);color:var(--bg);border-color:var(--accent);}
 .tab-btn:hover:not(.active){color:var(--text-sub);border-color:var(--border-mid);}
 .controls{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:1.2rem;}
 .char-filter-menu{position:relative;min-width:190px;}.char-filter-menu summary{display:flex;align-items:center;gap:.45rem;padding:.4rem .8rem;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text-sub);font-size:.82rem;cursor:pointer;list-style:none;user-select:none;}.char-filter-menu summary::-webkit-details-marker{display:none;}.char-filter-menu summary::before{content:'▼';color:var(--accent);font-size:.68rem;transition:transform .15s;}.char-filter-menu[open] summary{border-color:var(--accent);border-radius:6px 6px 0 0;}.char-filter-menu[open] summary::before{transform:rotate(180deg);}.char-filter-options{position:absolute;top:calc(100% - 1px);left:0;z-index:30;display:flex;flex-wrap:wrap;gap:.45rem;width:min(440px,calc(100vw - 2rem));padding:.7rem;border:1px solid var(--accent);border-radius:0 6px 6px 6px;background:var(--surface);box-shadow:0 8px 20px rgba(0,0,0,.2);}
@@ -1316,7 +1316,6 @@ body{background:var(--bg);color:var(--text);font-family:'Hiragino Sans','Yu Goth
 .entry:hover{background:rgba(128,128,128,.03);}
 .avatar{width:38px;min-width:38px;height:38px;border-radius:50%;margin-right:1rem;margin-top:2px;flex-shrink:0;overflow:hidden;}
 .avatar img{width:100%;height:100%;object-fit:cover;display:block;}
-${exportAvatarCss}
 .bubble{flex:1;min-width:0;}
 .speaker-name{font-size:.8rem;font-weight:600;margin-bottom:.35rem;letter-spacing:.02em;}
 .speech-text{font-size:1rem;line-height:1.9;color:var(--text);word-break:break-all;}
@@ -1348,7 +1347,8 @@ ${exportAvatarCss}
 .settings-panel.export-critical-stats{display:block;}
 #themeToggle{position:fixed;top:1rem;right:1rem;z-index:100;}
 `;
-    const css = `${getRuntimeStylesheetCss() || fallbackCss}\n${exportCssOverrides}`;
+    /* 共有アバターCSSは、実行時CSS／フォールバックのどちらを使う場合にも必ず追加する。 */
+    const css = `${getRuntimeStylesheetCss() || fallbackCss}\n${exportAvatarCss}\n${exportCssOverrides}`;
 
     /* エクスポート用JS（テーマ切り替え＋タブ＋キャラフィルター） */
     const js = `
