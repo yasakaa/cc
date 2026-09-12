@@ -169,8 +169,16 @@ function isDiceMessage(text) {
   const first = text.split("\n")[0].trim();
   if (/^\d/.test(first)) return true;
   if (/^(?:x|rep|repeat)\d+/i.test(first)) return true;
+  /* ソード・ワールド系の威力表／ダメージ計算（K35[...]、KeyNo.35c[...] など） */
+  if (/^(?:k\d+(?:\[|$)|keyno\.\d+)/i.test(first)) return true;
   const cmd = first.toUpperCase().split(/[\s<=>(\[+\-]/)[0];
   return DICE_COMMANDS.has(cmd);
+}
+
+function subtabKind(tab) {
+  if (tab === "情報") return "info";
+  if (tab === "雑談") return "chat";
+  return "other";
 }
 
 /* ─── ログパース ─── */
@@ -500,6 +508,7 @@ function makeEntryEl(entry, idx) {
     d.className = "entry sys";
     if (state.sourceMode === "official" && entry.tab !== state.mainTab) {
       d.classList.add("from-subtab");
+      d.classList.add(`subtab-${subtabKind(entry.tab)}`);
       const context = document.createElement("span");
       context.className = "tab-context";
       context.textContent = `【${entry.tab} タブ】`;
@@ -517,6 +526,7 @@ function makeEntryEl(entry, idx) {
   wrapper.dataset.entryType = entry.type;
   if (state.sourceMode === "official" && entry.tab !== state.mainTab) {
     wrapper.classList.add("from-subtab");
+    wrapper.classList.add(`subtab-${subtabKind(entry.tab)}`);
     const context = document.createElement("div");
     context.className = "tab-context";
     context.textContent = `【${entry.tab} タブ】`;
@@ -1338,9 +1348,9 @@ body{background:var(--bg);color:var(--text);font-family:'Hiragino Sans','Yu Goth
 .entry-wrapper.hidden{display:none!important;}
 .entry.sys.hidden{display:none!important;}
 .log-area.official-log .avatar{border-radius:0;}
-.log-area.showing-all .entry-wrapper.from-subtab{margin:.35rem 0;padding:.35rem .8rem .35rem 1rem;border-left:6px solid var(--accent);border-radius:5px;background:var(--surface2);box-shadow:inset 0 0 0 1px var(--border-mid);}
-.log-area.showing-all .entry.sys.from-subtab{border-left:6px solid var(--accent);background:var(--surface2);}
-.tab-context{display:none;}.log-area.showing-all .tab-context{display:inline-block;margin:0 0 .45rem;padding:.18rem .6rem;border-radius:3px;background:var(--accent);color:var(--bg);font-size:.72rem;font-weight:700;letter-spacing:.08em;line-height:1.25;}`;
+.log-area.showing-all .entry-wrapper.from-subtab{--subtab-accent:var(--accent);--subtab-bg:var(--surface2);margin:.35rem 0;padding:.35rem .8rem .35rem 1rem;border-left:6px solid var(--subtab-accent);border-radius:5px;background:var(--subtab-bg);box-shadow:inset 0 0 0 1px var(--border-mid);}.log-area.showing-all .entry-wrapper.subtab-chat{--subtab-accent:#77818b;--subtab-bg:rgba(119,129,139,.13);}.log-area.showing-all .entry-wrapper.subtab-other{--subtab-accent:#5f91b5;--subtab-bg:rgba(95,145,181,.13);}
+.log-area.showing-all .entry.sys.from-subtab{--subtab-accent:var(--accent);--subtab-bg:var(--surface2);border-left:6px solid var(--subtab-accent);background:var(--subtab-bg);}.log-area.showing-all .entry.sys.subtab-chat{--subtab-accent:#77818b;--subtab-bg:rgba(119,129,139,.13);}.log-area.showing-all .entry.sys.subtab-other{--subtab-accent:#5f91b5;--subtab-bg:rgba(95,145,181,.13);}
+.tab-context{display:none;}.log-area.showing-all .tab-context{display:inline-block;margin:0 0 .45rem;padding:.18rem .6rem;border-radius:3px;background:var(--subtab-accent,var(--accent));color:var(--bg);font-size:.72rem;font-weight:700;letter-spacing:.08em;line-height:1.25;}`;
     const exportCssOverrides = `
 #tab-bar{display:flex;}
 #controls{display:flex;}

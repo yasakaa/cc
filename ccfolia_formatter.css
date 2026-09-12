@@ -635,16 +635,36 @@ h1 {
   position: relative;
 }
 .log-area.showing-all .entry-wrapper.from-subtab {
+  --subtab-accent: var(--accent);
+  --subtab-bg: color-mix(in srgb, var(--surface2) 82%, transparent);
   margin: 0.35rem 0;
   padding: 0.35rem 0.8rem 0.35rem 1rem;
-  border-left: 6px solid var(--accent);
+  border-left: 6px solid var(--subtab-accent);
   border-radius: 5px;
-  background: color-mix(in srgb, var(--surface2) 82%, transparent);
+  background: var(--subtab-bg);
   box-shadow: inset 0 0 0 1px var(--border-mid);
 }
+.log-area.showing-all .entry-wrapper.subtab-chat {
+  --subtab-accent: #77818b;
+  --subtab-bg: color-mix(in srgb, #77818b 13%, transparent);
+}
+.log-area.showing-all .entry-wrapper.subtab-other {
+  --subtab-accent: #5f91b5;
+  --subtab-bg: color-mix(in srgb, #5f91b5 13%, transparent);
+}
 .log-area.showing-all .entry.sys.from-subtab {
-  border-left: 6px solid var(--accent);
-  background: color-mix(in srgb, var(--surface2) 82%, transparent);
+  --subtab-accent: var(--accent);
+  --subtab-bg: color-mix(in srgb, var(--surface2) 82%, transparent);
+  border-left: 6px solid var(--subtab-accent);
+  background: var(--subtab-bg);
+}
+.log-area.showing-all .entry.sys.subtab-chat {
+  --subtab-accent: #77818b;
+  --subtab-bg: color-mix(in srgb, #77818b 13%, transparent);
+}
+.log-area.showing-all .entry.sys.subtab-other {
+  --subtab-accent: #5f91b5;
+  --subtab-bg: color-mix(in srgb, #5f91b5 13%, transparent);
 }
 .tab-context {
   display: none;
@@ -654,7 +674,7 @@ h1 {
   margin: 0 0 0.45rem;
   padding: 0.18rem 0.6rem;
   border-radius: 3px;
-  background: var(--accent);
+  background: var(--subtab-accent, var(--accent));
   color: var(--bg);
   font-size: 0.72rem;
   font-weight: 700;
