@@ -151,7 +151,7 @@ function getExtFromDataUrl(dataUrl) {
    file:// などCSSOMへアクセスできない環境だけ、内蔵フォールバックを使用する。 */
 function getRuntimeStylesheetCss() {
   try {
-    const link = document.querySelector('link[href$="ccfolia_formatter.css"]');
+    const link = document.querySelector('link[href*="ccfolia_formatter.css"]');
     const sheet = [...document.styleSheets].find((item) => item.ownerNode === link);
     return sheet ? [...sheet.cssRules].map((rule) => rule.cssText).join("\n") : "";
   } catch {
