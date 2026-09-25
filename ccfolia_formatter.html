@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ココフォリア ログ整形ツール v0.2</title>
-    <link rel="stylesheet" href="ccfolia_formatter.css?v=0.2.3" />
+    <link rel="stylesheet" href="ccfolia_formatter.css?v=0.2.5" />
   </head>
   <body>
     <div class="wrapper">
@@ -72,6 +72,10 @@
       </div>
 
       <!-- クリティカル／ファンブル統計 -->
+      <div class="roll-stat-options" id="rollStatOptions">
+        <label><input type="checkbox" id="includeSpecial" /> スペシャルを集計</label>
+        <label><input type="checkbox" id="includeInitial" /> 初期値成功を集計</label>
+      </div>
       <details class="settings-panel critical-stats" id="criticalStats">
         <summary>クリファン回数</summary>
         <div class="panel-body" id="criticalRows"></div>
@@ -80,6 +84,10 @@
       <!-- GM/KP 名称設定パネル（ログ読み込み後に表示） -->
       <details class="settings-panel" id="gm-panel">
         <summary>GM/KP 名称設定</summary>
+        <label class="gm-color-option">
+          <input type="checkbox" id="gmInitialColor" />
+          ユーザーネームが初期色の発言者はすべてGM/KPコマにする
+        </label>
         <div class="panel-body" id="gm-rows">
           <p class="panel-help">
             GM/KPと設定された発言者の発言はキャラクターと異なる文章表示に設定されます。結果としてキャラクターとそれ以外の情報が見分けやすくなり、ログが読みやすくなります。
@@ -111,6 +119,6 @@
       ↑
     </button>
 
-    <script src="ccfolia_formatter.js?v=0.2.3"></script>
+    <script src="ccfolia_formatter.js?v=0.2.5"></script>
   </body>
 </html>

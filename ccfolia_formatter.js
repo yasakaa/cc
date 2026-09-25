@@ -8,8 +8,12 @@ const ui = {
   charFilterMenu: document.getElementById("charFilterMenu"),
   criticalStats: document.getElementById("criticalStats"),
   criticalRows: document.getElementById("criticalRows"),
+  rollStatOptions: document.getElementById("rollStatOptions"),
+  includeSpecial: document.getElementById("includeSpecial"),
+  includeInitial: document.getElementById("includeInitial"),
   gmPanel: document.getElementById("gm-panel"),
   gmRows: document.getElementById("gm-rows"),
+  gmInitialColor: document.getElementById("gmInitialColor"),
   iconPanel: document.getElementById("icon-panel"),
   iconRows: document.getElementById("icon-rows"),
   logArea: document.getElementById("logArea"),
@@ -38,6 +42,8 @@ const state = {
   sourceMode: "official",
   rawOfficialFiles: [],
   mainTab: "_",
+  rollStatOptions: { special: false, initial: false },
+  treatInitialColorAsGM: false,
 };
 
 /* フォールバック用パレット（ログにカラー指定がない場合に使用） */
@@ -103,19 +109,24 @@ function normalizeKey(raw) {
 }
 
 /* 発言者名からGM/PC/sysを判定 */
-function isGMRole(raw) {
+function isInitialNameColor(color) {
+  const value = (color || "").replace(/\s/g, "").toLowerCase();
+  return value === "#888" || value === "#888888" || value === "rgb(136,136,136)";
+}
+function isGMRole(raw, color = null) {
   const key = normalizeKey(raw);
   if (userPcNames.has(key)) return false; // ユーザーがPCに設定
   if (userGmNames.has(key)) return true; // ユーザーがGMに設定
+  if (state.treatInitialColorAsGM && isInitialNameColor(color)) return true;
   if (GM_KEYS_DEFAULT.has(key)) return true; // デフォルトGM名
   if (/^[▼▽]/.test(raw.trim())) return true;
   if (/^[\s　 ]*$/.test(raw)) return true;
   return false;
 }
-function roleOf(raw) {
+function roleOf(raw, color = null) {
   const key = normalizeKey(raw);
   if (SYS_KEYS.has(key)) return "sys";
-  if (isGMRole(raw)) return "gm";
+  if (isGMRole(raw, color)) return "gm";
   return "pc";
 }
 
@@ -233,7 +244,7 @@ function parseLog(html) {
       rawNamesSeen.add(trimmedSpeaker);
     }
 
-    const type = roleOf(speakerRaw);
+    const type = roleOf(speakerRaw, safeLogColor(logColor));
     const speaker = type === "pc" ? speakerRaw.trim() : "";
     entries.push({
       type,
@@ -243,6 +254,7 @@ function parseLog(html) {
       text: textHtml,
       color: safeLogColor(logColor),
       rollText: isDiceMessage(textHtml) ? textHtml : "",
+      commandText: textHtml,
     });
   });
 
@@ -300,6 +312,7 @@ function parseOfficialLogs(files) {
       const speakerRaw = article.querySelector(".speaker")?.textContent.trim() || "";
       const message = article.querySelector(".message-text")?.textContent.trim() || "";
       const roll = article.querySelector(".roll-result")?.textContent.trim() || "";
+      const logColor = safeLogColor(article.querySelector(".speaker")?.style.getPropertyValue("--speaker-color"));
       const text = [message, roll].filter(Boolean).join("\n");
       if (!text) return;
       const timestamp = article.querySelector("time")?.getAttribute("datetime") || "";
@@ -315,7 +328,7 @@ function parseOfficialLogs(files) {
         ? "gm"
         : article.classList.contains("system")
           ? "sys"
-          : roleOf(speakerRaw);
+          : roleOf(speakerRaw, logColor);
       entries.push({
         type,
         tab,
@@ -323,7 +336,8 @@ function parseOfficialLogs(files) {
         speakerRaw,
         text,
         rollText: roll,
-        color: safeLogColor(article.querySelector(".speaker")?.style.getPropertyValue("--speaker-color")),
+        commandText: message,
+        color: logColor,
         image: avatarClass ? avatarImages.get(avatarClass) || null : null,
         timestamp,
       });
@@ -667,12 +681,49 @@ function buildCharFilters(entries) {
   ui.controls.style.display = "flex";
 }
 
+/* CoC6版の固定初期値スキル。能力値依存の回避・母国語はログだけでは判定不能なため除外。 */
+const COC6_INITIAL_SKILLS = new Map([
+  ["言いくるめ", 5], ["医学", 5], ["運転", 20], ["応急手当", 30], ["オカルト", 5],
+  ["科学", 1], ["鍵開け", 1], ["隠す", 15], ["隠れる", 10], ["機械修理", 20],
+  ["聞き耳", 25], ["キック", 25], ["クトゥルフ神話", 0], ["組み付き", 25], ["芸術", 5],
+  ["経理", 10], ["拳銃", 20], ["考古学", 1], ["こぶし/パンチ", 50], ["コンピュータ", 1],
+  ["サブマシンガン", 15], ["しのび歩き", 10], ["写真術", 10], ["重機械操作", 1], ["乗馬", 5],
+  ["ショットガン", 30], ["信用", 15], ["心理学", 5], ["人類学", 1], ["水泳", 25],
+  ["制作", 5], ["精神分析", 1], ["生物学", 1], ["説得", 15], ["操縦", 1], ["地質学", 1],
+  ["跳躍", 25], ["追跡", 10], ["頭突き", 10], ["電気修理", 10], ["電子工学", 1],
+  ["天文学", 1], ["投擲", 25], ["登攀", 40], ["図書館", 25], ["ナビゲート", 10],
+  ["値切り", 5], ["博物学", 10], ["物理学", 1], ["変装", 1], ["法律", 5],
+  ["他の言語", 1], ["マーシャルアーツ", 1], ["マシンガン", 15], ["目星", 25],
+  ["薬学", 1], ["ライフル", 25], ["歴史", 20],
+]);
+
+function normalizeSkillName(name) {
+  return (name || "")
+    .normalize("NFKC")
+    .replace(/[\s　]/g, "")
+    .replace(/／/g, "/")
+    .replace(/[（(].*?[）)]/g, "");
+}
+function skillCheckDetails(entry) {
+  const resultText = entry.rollText || (isDiceMessage(entry.text) ? entry.text : "");
+  const commandText = entry.commandText || entry.text;
+  const target = resultText.match(/1D100\s*<=\s*(\d+)/i)?.[1];
+  const roll = resultText.match(/＞\s*(\d+)\s*＞/)?.[1];
+  const skill = commandText.match(/【([^】]+)】/)?.[1] || "";
+  const successful = /＞\s*(?:決定的成功|クリティカル|自動的成功|スペシャル|成功)/.test(resultText);
+  return { resultText, target: Number(target), roll: Number(roll), skill: normalizeSkillName(skill), successful };
+}
+
 function criticalFumbleKind(entry) {
   /* 公式ログではダイス結果欄、従来ログではダイス行だけを確認する */
-  const resultText = entry.rollText || (isDiceMessage(entry.text) ? entry.text : "");
+  const { resultText, target, roll, skill, successful } = skillCheckDetails(entry);
+  const initialValue = COC6_INITIAL_SKILLS.get(skill);
   return {
     critical: /＞\s+(?:決定的成功|クリティカル|自動的成功)/.test(resultText),
     fumble: /＞\s+(?:致命的失敗|ファンブル|自動的失敗)/.test(resultText),
+    /* 01はクリティカルとして別集計。スペシャルは02〜技能値の1/5とする。 */
+    special: Boolean(skill && successful && roll > 1 && roll <= Math.floor(target / 5)),
+    initial: Boolean(skill && successful && initialValue !== undefined && target === initialValue),
   };
 }
 
@@ -680,7 +731,9 @@ function criticalFumbleStats(entries) {
   const results = new Map();
   entries.filter((entry) => entry.type === "pc").forEach((entry) => {
     if (!results.has(entry.speaker)) {
-      results.set(entry.speaker, { speaker: entry.speaker, critical: 0, fumble: 0 });
+      results.set(entry.speaker, {
+        speaker: entry.speaker, critical: 0, fumble: 0, special: 0, initial: 0,
+      });
     }
     const kind = criticalFumbleKind(entry);
     if (kind.critical) {
@@ -689,19 +742,40 @@ function criticalFumbleStats(entries) {
     if (kind.fumble) {
       results.get(entry.speaker).fumble++;
     }
+    if (kind.special) results.get(entry.speaker).special++;
+    if (kind.initial) results.get(entry.speaker).initial++;
   });
-  return [...results.values()].filter(({ critical, fumble }) => critical || fumble);
+  return [...results.values()].filter((stats) =>
+    stats.critical || stats.fumble ||
+    (state.rollStatOptions.special && stats.special) ||
+    (state.rollStatOptions.initial && stats.initial),
+  );
+}
+
+function activeStatLabels(kind) {
+  return [
+    kind.critical && "クリティカル",
+    kind.fumble && "ファンブル",
+    state.rollStatOptions.special && kind.special && "スペシャル",
+    state.rollStatOptions.initial && kind.initial && "初期値成功",
+  ].filter(Boolean);
+}
+function statSummary(stats) {
+  return [
+    `クリティカル ${stats.critical}回`,
+    `ファンブル ${stats.fumble}回`,
+    state.rollStatOptions.special && `スペシャル ${stats.special}回`,
+    state.rollStatOptions.initial && `初期値成功 ${stats.initial}回`,
+  ].filter(Boolean).join("、");
 }
 
 function criticalPreviewHtml(entries, speaker) {
   return entries
     .filter((entry) => entry.type === "pc" && entry.speaker === speaker)
     .map((entry) => ({ entry, kind: criticalFumbleKind(entry) }))
-    .filter(({ kind }) => kind.critical || kind.fumble)
+    .filter(({ kind }) => activeStatLabels(kind).length)
     .map(({ entry, kind }) => {
-      const labels = [kind.critical && "クリティカル", kind.fumble && "ファンブル"]
-        .filter(Boolean)
-        .join(" / ");
+      const labels = activeStatLabels(kind).join(" / ");
       const tab = entry.tab && entry.tab !== "_" ? ` [${esc(entry.tab)}]` : "";
       return `<div class="critical-preview-entry"><span class="critical-preview-kind">${labels}${tab}</span>${fmt(entry.text)}</div>`;
     })
@@ -711,14 +785,25 @@ function criticalPreviewHtml(entries, speaker) {
 function buildCriticalStats(entries) {
   const stats = criticalFumbleStats(entries);
   ui.criticalRows.innerHTML = "";
-  stats.forEach(({ speaker, critical, fumble }) => {
+  stats.forEach((stats) => {
+    const { speaker } = stats;
     const row = document.createElement("div");
     row.className = "critical-stat-row";
-    row.innerHTML = `<details class="critical-char-preview"><summary><span class="dot" data-charname="${escAttr(speaker)}" style="background:${getColor(speaker)}"></span><span class="critical-stat-name">${esc(speaker)}</span><span>クリティカル ${critical}回、ファンブル ${fumble}回</span></summary><div class="critical-preview-list">${criticalPreviewHtml(entries, speaker)}</div></details>`;
+    row.innerHTML = `<details class="critical-char-preview"><summary><span class="dot" data-charname="${escAttr(speaker)}" style="background:${getColor(speaker)}"></span><span class="critical-stat-name">${esc(speaker)}</span><span>${statSummary(stats)}</span></summary><div class="critical-preview-list">${criticalPreviewHtml(entries, speaker)}</div></details>`;
     ui.criticalRows.appendChild(row);
   });
   ui.criticalStats.style.display = stats.length ? "block" : "none";
+  ui.rollStatOptions.style.display = entries.some((entry) => entry.type === "pc") ? "flex" : "none";
 }
+
+ui.includeSpecial.addEventListener("change", () => {
+  state.rollStatOptions.special = ui.includeSpecial.checked;
+  buildCriticalStats(state.entries);
+});
+ui.includeInitial.addEventListener("change", () => {
+  state.rollStatOptions.initial = ui.includeInitial.checked;
+  buildCriticalStats(state.entries);
+});
 
 ui.controls.addEventListener("click", (e) => {
   const b = e.target.closest(".filter-btn");
@@ -777,7 +862,10 @@ function buildGMPanel(rawNames) {
 
   allPanelNames.forEach((name) => {
     const key = normalizeKey(name);
-    const currentlyGM = isGMRole(name);
+    const hasInitialColor = state.entries.some(
+      (entry) => entry.speakerRaw === name && isInitialNameColor(entry.color),
+    );
+    const currentlyGM = isGMRole(name, hasInitialColor ? "#888888" : null);
 
     const row = document.createElement("div");
     row.className = "gm-row";
@@ -798,13 +886,13 @@ function buildGMPanel(rawNames) {
     pcBtn.textContent = "キャラ";
 
     gmBtn.addEventListener("click", () => {
-      if (isGMRole(name)) return;
+      if (currentlyGM) return;
       userGmNames.add(key);
       userPcNames.delete(key);
       reprocess();
     });
     pcBtn.addEventListener("click", () => {
-      if (!isGMRole(name)) return;
+      if (!currentlyGM) return;
       userPcNames.add(key);
       userGmNames.delete(key);
       reprocess();
@@ -846,6 +934,11 @@ function buildGMPanel(rawNames) {
 
   ui.gmPanel.style.display = "block";
 }
+
+ui.gmInitialColor.addEventListener("change", () => {
+  state.treatInitialColorAsGM = ui.gmInitialColor.checked;
+  reprocess();
+});
 
 /* ─── キャラクター設定パネル（アイコン・カラー） ─── */
 function buildIconPanel(entries) {
@@ -1278,10 +1371,15 @@ ui.exportHtmlBtn.addEventListener("click", async () => {
       .join("");
     const criticalRowsHtml = criticalFumbleStats(state.entries)
       .map(
-        ({ speaker, critical, fumble }) =>
-          `<div class="critical-stat-row"><details class="critical-char-preview"><summary><span class="dot" style="background:${getColor(speaker)}"></span><span class="critical-stat-name">${esc(speaker)}</span><span>クリティカル ${critical}回、ファンブル ${fumble}回</span></summary><div class="critical-preview-list">${criticalPreviewHtml(state.entries, speaker)}</div></details></div>`,
+        (stats) =>
+          `<div class="critical-stat-row"><details class="critical-char-preview"><summary><span class="dot" style="background:${getColor(stats.speaker)}"></span><span class="critical-stat-name">${esc(stats.speaker)}</span><span>${statSummary(stats)}</span></summary><div class="critical-preview-list">${criticalPreviewHtml(state.entries, stats.speaker)}</div></details></div>`,
       )
       .join("");
+    const enabledStatTypes = [
+      "クリティカル", "ファンブル",
+      state.rollStatOptions.special && "スペシャル",
+      state.rollStatOptions.initial && "初期値成功",
+    ].filter(Boolean).join("・");
 
     const domNodes = Array.from(ui.logArea.querySelector(".tab-section").children);
     const bodyHtml =
@@ -1439,7 +1537,7 @@ ${charBtnsHtml}
 </div>
 </details>
 </div>
-${criticalRowsHtml ? `<details class="settings-panel critical-stats export-critical-stats"><summary>クリファン回数</summary><div class="panel-body">${criticalRowsHtml}</div></details>` : ""}
+${criticalRowsHtml ? `<details class="settings-panel critical-stats export-critical-stats"><summary>クリファン回数</summary><div class="panel-body"><p class="panel-help">集計対象：${enabledStatTypes}</p>${criticalRowsHtml}</div></details>` : ""}
 <div class="log-area showing-all${state.sourceMode === "official" ? " official-log" : ""}">
 ${bodyHtml}
 </div>
