@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ココフォリア ログ整形ツール v0.2</title>
-    <link rel="stylesheet" href="ccfolia_formatter.css?v=0.2.10" />
+    <link rel="stylesheet" href="ccfolia_formatter.css?v=0.2.11" />
   </head>
   <body>
     <div class="wrapper">
@@ -73,8 +73,8 @@
 
       <!-- クリティカル／ファンブル統計 -->
       <div class="roll-stat-options" id="rollStatOptions">
-        <label><input type="checkbox" id="includeSpecial" /> スペシャル／イクストリーム／ハード成功を集計</label>
-        <label><input type="checkbox" id="includeInitial" /> 初期値成功を集計</label>
+        <label><input type="checkbox" id="includeSpecial" checked /> スペシャル／イクストリーム／ハード成功を集計</label>
+        <label><input type="checkbox" id="includeInitial" checked /> 初期値成功を集計</label>
       </div>
       <details class="settings-panel critical-stats" id="criticalStats">
         <summary>クリファン回数</summary>
@@ -85,7 +85,7 @@
       <details class="settings-panel" id="gm-panel">
         <summary>GM/KP 名称設定</summary>
         <label class="gm-color-option">
-          <input type="checkbox" id="gmInitialColor" />
+          <input type="checkbox" id="gmInitialColor" checked />
           ユーザーネームが初期色の発言者はすべてGM/KPコマにする
         </label>
         <div class="panel-body" id="gm-rows">
@@ -119,6 +119,6 @@
       ↑
     </button>
 
-    <script src="ccfolia_formatter.js?v=0.2.10"></script>
+    <script src="ccfolia_formatter.js?v=0.2.11"></script>
   </body>
 </html>

@@ -42,8 +42,8 @@ const state = {
   sourceMode: "official",
   rawOfficialFiles: [],
   mainTab: "_",
-  rollStatOptions: { special: false, initial: false },
-  treatInitialColorAsGM: false,
+  rollStatOptions: { special: true, initial: true },
+  treatInitialColorAsGM: true,
 };
 
 /* フォールバック用パレット（ログにカラー指定がない場合に使用） */
@@ -631,9 +631,9 @@ function renderEntries(entries) {
 }
 
 /* ─── タブバー ─── */
-function buildTabBar(entries) {
+function orderedTabs(entries) {
   const tabPriority = ["メイン", "情報", "雑談"];
-  const tabs = [...new Set(entries.map((e) => e.tab))].sort((a, b) => {
+  return [...new Set(entries.map((e) => e.tab))].sort((a, b) => {
     const aPriority = tabPriority.indexOf(a);
     const bPriority = tabPriority.indexOf(b);
     if (aPriority !== -1 || bPriority !== -1) {
@@ -645,6 +645,9 @@ function buildTabBar(entries) {
     if (b === "_") return -1;
     return a.localeCompare(b, "ja");
   });
+}
+function buildTabBar(entries) {
+  const tabs = orderedTabs(entries);
   ui.tabBar.innerHTML = "";
   if (tabs.length <= 1) {
     ui.tabBar.style.display = "none";
@@ -1412,7 +1415,7 @@ ui.exportHtmlBtn.addEventListener("click", async () => {
       return clone.outerHTML;
     }
 
-    const expTabs = [...new Set(state.entries.map((e) => e.tab))];
+    const expTabs = orderedTabs(state.entries);
     const expSpeakers = [
       ...new Set(
         state.entries
