@@ -67,7 +67,13 @@ function getColor(name) {
   return state.colors[name];
 }
 function safeLogColor(color) {
-  return /^#[0-9a-f]{3,8}$/i.test(color || "") ? color : null;
+  const value = (color || "").trim();
+  // ココフォリアの出力差異（#888 / #888888 / rgb(136, 136, 136)）を保持する。
+  // 任意の CSS をそのまま出力しないよう、許可する書式は色値だけに限定する。
+  return /^#[0-9a-f]{3,8}$/i.test(value) ||
+    /^rgb\(\s*(?:[01]?\d?\d|2[0-4]\d|25[0-5])\s*,\s*(?:[01]?\d?\d|2[0-4]\d|25[0-5])\s*,\s*(?:[01]?\d?\d|2[0-4]\d|25[0-5])\s*\)$/i.test(value)
+    ? value
+    : null;
 }
 
 /* ─── GM/PC 判定 ─── */
@@ -695,6 +701,31 @@ const COC6_INITIAL_SKILLS = new Map([
   ["値切り", 5], ["博物学", 10], ["物理学", 1], ["変装", 1], ["法律", 5],
   ["他の言語", 1], ["マーシャルアーツ", 1], ["マシンガン", 15], ["目星", 25],
   ["薬学", 1], ["ライフル", 25], ["歴史", 20],
+  ["ソード", 20], ["ナイフ", 25], ["絞殺ひも", 15], ["格闘", 25], ["斧", 20],
+  ["杖", 25], ["日本刀", 15], ["チェーンソー", 20], ["火炎放射器", 10],
+]);
+/* CoC7版の固定初期値スキル。回避・母国語は能力値依存のため除外。 */
+const COC7_INITIAL_SKILLS = new Map([
+  ["言いくるめ", 5], ["医学", 1], ["運転", 20], ["応急手当", 30], ["オカルト", 5],
+  ["科学", 1], ["鍵開け", 1], ["隠密", 20], ["聞き耳", 20], ["近接戦闘", 25],
+  ["芸術/制作", 5], ["芸術/製作", 5], ["信用", 0], ["クトゥルフ神話", 0],
+  ["射撃", 0], ["投擲", 20], ["手さばき", 10], ["精神分析", 1], ["追跡", 10],
+  ["登攀", 20], ["鑑定", 5], ["機械修理", 10], ["重機械操作", 1], ["乗馬", 5],
+  ["水泳", 20], ["操縦", 1], ["跳躍", 20], ["電気修理", 10], ["ナビゲート", 10],
+  ["変装", 5], ["説得", 10], ["威圧", 15], ["魅惑", 15], ["言語", 1],
+  ["経理", 5], ["考古学", 1], ["コンピューター", 5], ["コンピュータ", 5],
+  ["心理学", 10], ["人類学", 1], ["電子工学", 1], ["自然", 10], ["法律", 5],
+  ["歴史", 5], ["サバイバル", 10], ["目星", 25], ["図書館", 20],
+  /* 7版の武器技能。括弧内の武器種まで一致した場合だけ初期値を適用する。 */
+  ["近接戦闘（ソード）", 20], ["近接戦闘（ナイフ）", 25],
+  ["近接戦闘（絞殺ひも）", 15], ["近接戦闘（格闘）", 25],
+  ["近接戦闘（斧）", 15], ["近接戦闘（杖）", 25],
+  ["近接戦闘（日本刀）", 15], ["近接戦闘（チェーンソー）", 10],
+  ["近接戦闘（刀剣）", 20], ["近接戦闘（フレイル）", 10],
+  ["射撃（火炎放射器）", 10], ["射撃（拳銃）", 20],
+  ["射撃（ライフル）", 25], ["射撃（ショットガン）", 25],
+  ["射撃（サブマシンガン）", 15], ["射撃（マシンガン）", 10],
+  ["射撃（弓）", 15], ["射撃（銃火器）", 10],
 ]);
 
 function normalizeSkillName(name) {
@@ -702,7 +733,17 @@ function normalizeSkillName(name) {
     .normalize("NFKC")
     .replace(/[\s　]/g, "")
     .replace(/／/g, "/")
-    .replace(/[（(].*?[）)]/g, "");
+    .replace(/\(/g, "（")
+    .replace(/\)/g, "）");
+}
+function baseSkillName(skill) {
+  return skill.replace(/（.*?）/g, "");
+}
+function initialSkillValue(initialSkills, skill) {
+  if (!initialSkills || !skill) return undefined;
+  // 7版の武器技能は「近接戦闘（斧）」のように完全一致を優先する。
+  // それ以外の任意技能は、括弧内を除いた基本技能名で照合する。
+  return initialSkills.get(skill) ?? initialSkills.get(baseSkillName(skill));
 }
 function skillCheckDetails(entry) {
   const resultText = entry.rollText || (isDiceMessage(entry.text) ? entry.text : "");
@@ -710,20 +751,28 @@ function skillCheckDetails(entry) {
   const target = resultText.match(/1D100\s*<=\s*(\d+)/i)?.[1];
   const roll = resultText.match(/＞\s*(\d+)\s*＞/)?.[1];
   const skill = commandText.match(/【([^】]+)】/)?.[1] || "";
+  const edition = /\bCCB\s*<=/i.test(commandText)
+    ? 6
+    : /\bCC(?!B)\s*<=/i.test(commandText)
+      ? 7
+      : null;
   const successful = /＞\s*(?:決定的成功|クリティカル|自動的成功|スペシャル|成功)/.test(resultText);
-  return { resultText, target: Number(target), roll: Number(roll), skill: normalizeSkillName(skill), successful };
+  return {
+    resultText, target: Number(target), roll: Number(roll), skill: normalizeSkillName(skill), successful, edition,
+  };
 }
 
 function criticalFumbleKind(entry) {
   /* 公式ログではダイス結果欄、従来ログではダイス行だけを確認する */
-  const { resultText, target, roll, skill, successful } = skillCheckDetails(entry);
-  const initialValue = COC6_INITIAL_SKILLS.get(skill);
+  const { resultText, target, roll, skill, successful, edition } = skillCheckDetails(entry);
+  const initialSkills = edition === 6 ? COC6_INITIAL_SKILLS : edition === 7 ? COC7_INITIAL_SKILLS : null;
+  const initialValue = initialSkillValue(initialSkills, skill);
   return {
     critical: /＞\s+(?:決定的成功|クリティカル|自動的成功)/.test(resultText),
     fumble: /＞\s+(?:致命的失敗|ファンブル|自動的失敗)/.test(resultText),
     /* 01はクリティカルとして別集計。スペシャルは02〜技能値の1/5とする。 */
     special: Boolean(skill && successful && roll > 1 && roll <= Math.floor(target / 5)),
-    initial: Boolean(skill && successful && initialValue !== undefined && target === initialValue),
+    initial: Boolean(edition && skill && successful && initialValue !== undefined && target === initialValue),
   };
 }
 
