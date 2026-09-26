@@ -632,7 +632,19 @@ function renderEntries(entries) {
 
 /* ─── タブバー ─── */
 function buildTabBar(entries) {
-  const tabs = [...new Set(entries.map((e) => e.tab))];
+  const tabPriority = ["メイン", "情報", "雑談"];
+  const tabs = [...new Set(entries.map((e) => e.tab))].sort((a, b) => {
+    const aPriority = tabPriority.indexOf(a);
+    const bPriority = tabPriority.indexOf(b);
+    if (aPriority !== -1 || bPriority !== -1) {
+      return (aPriority === -1 ? tabPriority.length : aPriority) -
+        (bPriority === -1 ? tabPriority.length : bPriority);
+    }
+    // 固定3タブ以外は日本語の名前順。未分類は最後に置く。
+    if (a === "_") return 1;
+    if (b === "_") return -1;
+    return a.localeCompare(b, "ja");
+  });
   ui.tabBar.innerHTML = "";
   if (tabs.length <= 1) {
     ui.tabBar.style.display = "none";
