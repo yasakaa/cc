@@ -756,7 +756,7 @@ function skillCheckDetails(entry) {
     : /\bCC(?!B)\s*<=/i.test(commandText)
       ? 7
       : null;
-  const successful = /＞\s*(?:決定的成功|クリティカル|自動的成功|スペシャル|成功)/.test(resultText);
+  const successful = /＞\s*(?:決定的成功|クリティカル|自動的成功|スペシャル|イクストリーム成功|ハード成功|成功)/.test(resultText);
   return {
     resultText, target: Number(target), roll: Number(roll), skill: normalizeSkillName(skill), successful, edition,
   };
@@ -770,8 +770,10 @@ function criticalFumbleKind(entry) {
   return {
     critical: /＞\s+(?:決定的成功|クリティカル|自動的成功)/.test(resultText),
     fumble: /＞\s+(?:致命的失敗|ファンブル|自動的失敗)/.test(resultText),
-    /* 01はクリティカルとして別集計。スペシャルは02〜技能値の1/5とする。 */
-    special: Boolean(skill && successful && roll > 1 && roll <= Math.floor(target / 5)),
+    /* 6版は02〜技能値の1/5をスペシャルとして数える。7版は出力結果の成功種別をそのまま使う。 */
+    special: Boolean(edition === 6 && skill && successful && roll > 1 && roll <= Math.floor(target / 5)),
+    extreme: Boolean(edition === 7 && /イクストリーム成功/.test(resultText)),
+    hard: Boolean(edition === 7 && /ハード成功/.test(resultText)),
     initial: Boolean(edition && skill && successful && initialValue !== undefined && target === initialValue),
   };
 }
@@ -781,7 +783,7 @@ function criticalFumbleStats(entries) {
   entries.filter((entry) => entry.type === "pc").forEach((entry) => {
     if (!results.has(entry.speaker)) {
       results.set(entry.speaker, {
-        speaker: entry.speaker, critical: 0, fumble: 0, special: 0, initial: 0,
+        speaker: entry.speaker, critical: 0, fumble: 0, special: 0, extreme: 0, hard: 0, initial: 0,
       });
     }
     const kind = criticalFumbleKind(entry);
@@ -792,11 +794,13 @@ function criticalFumbleStats(entries) {
       results.get(entry.speaker).fumble++;
     }
     if (kind.special) results.get(entry.speaker).special++;
+    if (kind.extreme) results.get(entry.speaker).extreme++;
+    if (kind.hard) results.get(entry.speaker).hard++;
     if (kind.initial) results.get(entry.speaker).initial++;
   });
   return [...results.values()].filter((stats) =>
     stats.critical || stats.fumble ||
-    (state.rollStatOptions.special && stats.special) ||
+    (state.rollStatOptions.special && (stats.special || stats.extreme || stats.hard)) ||
     (state.rollStatOptions.initial && stats.initial),
   );
 }
@@ -806,6 +810,8 @@ function activeStatLabels(kind) {
     kind.critical && "クリティカル",
     kind.fumble && "ファンブル",
     state.rollStatOptions.special && kind.special && "スペシャル",
+    state.rollStatOptions.special && kind.extreme && "イクストリーム成功",
+    state.rollStatOptions.special && kind.hard && "ハード成功",
     state.rollStatOptions.initial && kind.initial && "初期値成功",
   ].filter(Boolean);
 }
@@ -814,6 +820,8 @@ function statSummary(stats) {
     `クリティカル ${stats.critical}回`,
     `ファンブル ${stats.fumble}回`,
     state.rollStatOptions.special && `スペシャル ${stats.special}回`,
+    state.rollStatOptions.special && `イクストリーム成功 ${stats.extreme}回`,
+    state.rollStatOptions.special && `ハード成功 ${stats.hard}回`,
     state.rollStatOptions.initial && `初期値成功 ${stats.initial}回`,
   ].filter(Boolean).join("、");
 }
@@ -1426,7 +1434,7 @@ ui.exportHtmlBtn.addEventListener("click", async () => {
       .join("");
     const enabledStatTypes = [
       "クリティカル", "ファンブル",
-      state.rollStatOptions.special && "スペシャル",
+      state.rollStatOptions.special && "スペシャル・イクストリーム成功・ハード成功",
       state.rollStatOptions.initial && "初期値成功",
     ].filter(Boolean).join("・");
 
