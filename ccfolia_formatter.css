@@ -673,6 +673,10 @@ h1 {
   background: var(--subtab-bg);
   box-shadow: inset 0 0 0 1px var(--border-mid);
 }
+/* サブタブ発言はカード内に収めるため、PC発言の通常の区切り線を表示しない。 */
+.log-area.showing-all .entry-wrapper.from-subtab .entry {
+  border-bottom: none;
+}
 .log-area.showing-all .entry-wrapper.subtab-chat {
   --subtab-accent: #77818b;
   --subtab-bg: color-mix(in srgb, #77818b 13%, transparent);

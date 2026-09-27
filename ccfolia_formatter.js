@@ -531,7 +531,7 @@ function makeEntryEl(entry, idx) {
       d.classList.add(`subtab-${subtabKind(entry.tab)}`);
       const context = document.createElement("span");
       context.className = "tab-context";
-      context.textContent = `【${entry.tab} タブ】`;
+      context.textContent = `【${entry.tab}】`;
       d.appendChild(context);
     }
     const text = document.createElement("span");
@@ -549,7 +549,7 @@ function makeEntryEl(entry, idx) {
     wrapper.classList.add(`subtab-${subtabKind(entry.tab)}`);
     const context = document.createElement("div");
     context.className = "tab-context";
-    context.textContent = `【${entry.tab} タブ】`;
+    context.textContent = `【${entry.tab}】`;
     wrapper.appendChild(context);
   }
 
@@ -830,13 +830,20 @@ function activeStatLabels(kind) {
     state.rollStatOptions.initial && kind.initial && "初期値成功",
   ].filter(Boolean);
 }
-function statSummary(stats) {
+function visibleSuccessStatKinds(statsList) {
+  return {
+    special: state.rollStatOptions.special && statsList.some((stats) => stats.special > 0),
+    extreme: state.rollStatOptions.special && statsList.some((stats) => stats.extreme > 0),
+    hard: state.rollStatOptions.special && statsList.some((stats) => stats.hard > 0),
+  };
+}
+function statSummary(stats, visibleKinds) {
   return [
     `クリティカル ${stats.critical}回`,
     `ファンブル ${stats.fumble}回`,
-    state.rollStatOptions.special && `スペシャル ${stats.special}回`,
-    state.rollStatOptions.special && `イクストリーム成功 ${stats.extreme}回`,
-    state.rollStatOptions.special && `ハード成功 ${stats.hard}回`,
+    visibleKinds.special && `スペシャル ${stats.special}回`,
+    visibleKinds.extreme && `イクストリーム成功 ${stats.extreme}回`,
+    visibleKinds.hard && `ハード成功 ${stats.hard}回`,
     state.rollStatOptions.initial && `初期値成功 ${stats.initial}回`,
   ].filter(Boolean).join("、");
 }
@@ -856,12 +863,13 @@ function criticalPreviewHtml(entries, speaker) {
 
 function buildCriticalStats(entries) {
   const stats = criticalFumbleStats(entries);
+  const visibleKinds = visibleSuccessStatKinds(stats);
   ui.criticalRows.innerHTML = "";
   stats.forEach((stats) => {
     const { speaker } = stats;
     const row = document.createElement("div");
     row.className = "critical-stat-row";
-    row.innerHTML = `<details class="critical-char-preview"><summary><span class="dot" data-charname="${escAttr(speaker)}" style="background:${getColor(speaker)}"></span><span class="critical-stat-name">${esc(speaker)}</span><span>${statSummary(stats)}</span></summary><div class="critical-preview-list">${criticalPreviewHtml(entries, speaker)}</div></details>`;
+    row.innerHTML = `<details class="critical-char-preview"><summary><span class="dot" data-charname="${escAttr(speaker)}" style="background:${getColor(speaker)}"></span><span class="critical-stat-name">${esc(speaker)}</span><span>${statSummary(stats, visibleKinds)}</span></summary><div class="critical-preview-list">${criticalPreviewHtml(entries, speaker)}</div></details>`;
     ui.criticalRows.appendChild(row);
   });
   ui.criticalStats.style.display = stats.length ? "block" : "none";
@@ -1441,15 +1449,19 @@ ui.exportHtmlBtn.addEventListener("click", async () => {
           `<button class="filter-btn" data-filter="${escAttr(sp)}"><span class="dot" style="background:${getColor(sp)}"></span>${esc(sp)}</button>`,
       )
       .join("");
-    const criticalRowsHtml = criticalFumbleStats(state.entries)
+    const exportStats = criticalFumbleStats(state.entries);
+    const exportVisibleKinds = visibleSuccessStatKinds(exportStats);
+    const criticalRowsHtml = exportStats
       .map(
         (stats) =>
-          `<div class="critical-stat-row"><details class="critical-char-preview"><summary><span class="dot" style="background:${getColor(stats.speaker)}"></span><span class="critical-stat-name">${esc(stats.speaker)}</span><span>${statSummary(stats)}</span></summary><div class="critical-preview-list">${criticalPreviewHtml(state.entries, stats.speaker)}</div></details></div>`,
+          `<div class="critical-stat-row"><details class="critical-char-preview"><summary><span class="dot" style="background:${getColor(stats.speaker)}"></span><span class="critical-stat-name">${esc(stats.speaker)}</span><span>${statSummary(stats, exportVisibleKinds)}</span></summary><div class="critical-preview-list">${criticalPreviewHtml(state.entries, stats.speaker)}</div></details></div>`,
       )
       .join("");
     const enabledStatTypes = [
       "クリティカル", "ファンブル",
-      state.rollStatOptions.special && "スペシャル・イクストリーム成功・ハード成功",
+      exportVisibleKinds.special && "スペシャル",
+      exportVisibleKinds.extreme && "イクストリーム成功",
+      exportVisibleKinds.hard && "ハード成功",
       state.rollStatOptions.initial && "初期値成功",
     ].filter(Boolean).join("・");
 
@@ -1518,7 +1530,7 @@ body{background:var(--bg);color:var(--text);font-family:'Hiragino Sans','Yu Goth
 .entry-wrapper.hidden{display:none!important;}
 .entry.sys.hidden{display:none!important;}
 .log-area.official-log .avatar{border-radius:0;}
-.log-area.showing-all .entry-wrapper.from-subtab{--subtab-accent:var(--accent);--subtab-bg:var(--surface2);margin:.35rem 0;padding:.35rem .8rem .35rem 1rem;border-left:6px solid var(--subtab-accent);border-radius:5px;background:var(--subtab-bg);box-shadow:inset 0 0 0 1px var(--border-mid);}.log-area.showing-all .entry-wrapper.subtab-chat{--subtab-accent:#77818b;--subtab-bg:rgba(119,129,139,.13);}.log-area.showing-all .entry-wrapper.subtab-other{--subtab-accent:#5f91b5;--subtab-bg:rgba(95,145,181,.13);}
+.log-area.showing-all .entry-wrapper.from-subtab{--subtab-accent:var(--accent);--subtab-bg:var(--surface2);margin:.35rem 0;padding:.35rem .8rem .35rem 1rem;border-left:6px solid var(--subtab-accent);border-radius:5px;background:var(--subtab-bg);box-shadow:inset 0 0 0 1px var(--border-mid);}.log-area.showing-all .entry-wrapper.from-subtab .entry{border-bottom:none;}.log-area.showing-all .entry-wrapper.subtab-chat{--subtab-accent:#77818b;--subtab-bg:rgba(119,129,139,.13);}.log-area.showing-all .entry-wrapper.subtab-other{--subtab-accent:#5f91b5;--subtab-bg:rgba(95,145,181,.13);}
 .log-area.showing-all .entry.sys.from-subtab{--subtab-accent:var(--accent);--subtab-bg:var(--surface2);border-left:6px solid var(--subtab-accent);background:var(--subtab-bg);}.log-area.showing-all .entry.sys.subtab-chat{--subtab-accent:#77818b;--subtab-bg:rgba(119,129,139,.13);}.log-area.showing-all .entry.sys.subtab-other{--subtab-accent:#5f91b5;--subtab-bg:rgba(95,145,181,.13);}
 .tab-context{display:none;}.log-area.showing-all .tab-context{display:inline-block;margin:0 0 .45rem;padding:.18rem .6rem;border-radius:3px;background:var(--subtab-accent,var(--accent));color:var(--bg);font-size:.72rem;font-weight:700;letter-spacing:.08em;line-height:1.25;}`;
     const exportCssOverrides = `
