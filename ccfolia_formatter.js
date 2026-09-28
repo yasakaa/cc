@@ -11,6 +11,7 @@ const ui = {
   rollStatOptions: document.getElementById("rollStatOptions"),
   includeSpecial: document.getElementById("includeSpecial"),
   includeInitial: document.getElementById("includeInitial"),
+  excludeSideTabRolls: document.getElementById("excludeSideTabRolls"),
   gmPanel: document.getElementById("gm-panel"),
   gmRows: document.getElementById("gm-rows"),
   gmInitialColor: document.getElementById("gmInitialColor"),
@@ -42,7 +43,7 @@ const state = {
   sourceMode: "official",
   rawOfficialFiles: [],
   mainTab: "_",
-  rollStatOptions: { special: true, initial: true },
+  rollStatOptions: { special: true, initial: true, excludeSideTabs: true },
   treatInitialColorAsGM: true,
 };
 
@@ -61,6 +62,8 @@ const PALETTE = [
   "#7060a0",
   "#906050",
 ];
+// 公式HTMLでは雑談チャンネルがファイル名由来で "other" になることがある。
+const EXCLUDED_ROLL_STAT_TABS = new Set(["お祓い", "雑談", "other"]);
 function getColor(name) {
   if (!state.colors[name])
     state.colors[name] = PALETTE[state.colorIdx++ % PALETTE.length];
@@ -795,7 +798,7 @@ function criticalFumbleKind(entry) {
 
 function criticalFumbleStats(entries) {
   const results = new Map();
-  entries.filter((entry) => entry.type === "pc").forEach((entry) => {
+  entries.filter((entry) => entry.type === "pc" && !isExcludedRollStatEntry(entry)).forEach((entry) => {
     if (!results.has(entry.speaker)) {
       results.set(entry.speaker, {
         speaker: entry.speaker, critical: 0, fumble: 0, special: 0, extreme: 0, hard: 0, initial: 0,
@@ -818,6 +821,10 @@ function criticalFumbleStats(entries) {
     (state.rollStatOptions.special && (stats.special || stats.extreme || stats.hard)) ||
     (state.rollStatOptions.initial && stats.initial),
   );
+}
+function isExcludedRollStatEntry(entry) {
+  return state.rollStatOptions.excludeSideTabs &&
+    EXCLUDED_ROLL_STAT_TABS.has((entry.tab || "").normalize("NFKC").trim());
 }
 
 function activeStatLabels(kind) {
@@ -850,7 +857,7 @@ function statSummary(stats, visibleKinds) {
 
 function criticalPreviewHtml(entries, speaker) {
   return entries
-    .filter((entry) => entry.type === "pc" && entry.speaker === speaker)
+    .filter((entry) => entry.type === "pc" && entry.speaker === speaker && !isExcludedRollStatEntry(entry))
     .map((entry) => ({ entry, kind: criticalFumbleKind(entry) }))
     .filter(({ kind }) => activeStatLabels(kind).length)
     .map(({ entry, kind }) => {
@@ -882,6 +889,10 @@ ui.includeSpecial.addEventListener("change", () => {
 });
 ui.includeInitial.addEventListener("change", () => {
   state.rollStatOptions.initial = ui.includeInitial.checked;
+  buildCriticalStats(state.entries);
+});
+ui.excludeSideTabRolls.addEventListener("change", () => {
+  state.rollStatOptions.excludeSideTabs = ui.excludeSideTabRolls.checked;
   buildCriticalStats(state.entries);
 });
 

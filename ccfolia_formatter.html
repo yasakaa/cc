@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ココフォリア ログ整形ツール v0.2</title>
-    <link rel="stylesheet" href="ccfolia_formatter.css?v=0.2.13" />
+    <link rel="stylesheet" href="ccfolia_formatter.css?v=0.2.15" />
   </head>
   <body>
     <div class="wrapper">
@@ -75,6 +75,7 @@
       <div class="roll-stat-options" id="rollStatOptions">
         <label><input type="checkbox" id="includeSpecial" checked /> スペシャル／イクストリーム／ハード成功を集計</label>
         <label><input type="checkbox" id="includeInitial" checked /> 初期値成功を集計</label>
+        <label><input type="checkbox" id="excludeSideTabRolls" checked /> 「お祓い」「雑談（other）」タブを集計から除外</label>
       </div>
       <details class="settings-panel critical-stats" id="criticalStats">
         <summary>クリファン回数</summary>
@@ -119,6 +120,6 @@
       ↑
     </button>
 
-    <script src="ccfolia_formatter.js?v=0.2.13"></script>
+    <script src="ccfolia_formatter.js?v=0.2.15"></script>
   </body>
 </html>
