@@ -42,6 +42,8 @@ const state = {
   colorIdx: 0,
   sourceMode: "official",
   rawOfficialFiles: [],
+  removedOfficialTabs: new Set(),
+  hiddenEntryIds: new Set(),
   mainTab: "_",
   rollStatOptions: { special: true, initial: true, excludeSideTabs: true },
   treatInitialColorAsGM: true,
@@ -522,9 +524,46 @@ function gmLabel(entry) {
   return "GM/KP";
 }
 
+function entryVisibilityId(index) {
+  return `${state.sourceMode}:${index}`;
+}
+function createHideEntryButton(entryId) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "hide-entry-btn";
+  button.textContent = "×";
+  button.title = "この発言を一時的に非表示";
+  button.setAttribute("aria-label", button.title);
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    state.hiddenEntryIds.add(entryId);
+    render();
+  });
+  return button;
+}
+function makeHiddenEntryPlaceholder(entry, index) {
+  const entryId = entryVisibilityId(index);
+  const placeholder = document.createElement("div");
+  placeholder.className = "entry-wrapper hidden-entry-placeholder";
+  placeholder.dataset.entryType = entry.type;
+  if (entry.type === "pc") placeholder.dataset.speaker = entry.speaker;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "restore-entry-btn";
+  button.textContent = "非表示の発言を再表示";
+  button.title = "この位置に発言を再表示";
+  button.addEventListener("click", () => {
+    state.hiddenEntryIds.delete(entryId);
+    render();
+  });
+  placeholder.appendChild(button);
+  return placeholder;
+}
+
 /* エントリー要素を生成する
-   idx: state.entries 内のインデックス（スチルの対応付けに使用） */
+   idx: ログ内で不変のインデックス（スチル・一時非表示の対応付けに使用） */
 function makeEntryEl(entry, idx) {
+  const entryId = entryVisibilityId(idx);
   /* システムメッセージ：ラッパーなし・スチルなし */
   if (entry.type === "sys") {
     const d = document.createElement("div");
@@ -540,6 +579,7 @@ function makeEntryEl(entry, idx) {
     const text = document.createElement("span");
     text.innerHTML = entry.text.split("\n").map(esc).join("<br>");
     d.appendChild(text);
+    d.appendChild(createHideEntryButton(entryId));
     return d;
   }
 
@@ -607,6 +647,7 @@ function makeEntryEl(entry, idx) {
 
   wrapper.appendChild(entryDiv);
   wrapper.appendChild(addBtn);
+  wrapper.appendChild(createHideEntryButton(entryId));
 
   /* 既存のスチルを復元（reprocess 後も idx が変わらないため保持可能） */
   if (state.stills[idx]) showStill(stillSlot, idx);
@@ -626,7 +667,10 @@ function renderEntries(entries) {
   const section = document.createElement("div");
   section.className = "tab-section";
   entries.forEach((e, idx) => {
-    const el = makeEntryEl(e, idx);
+    const sourceIndex = e.sourceIndex ?? idx;
+    const el = state.hiddenEntryIds.has(entryVisibilityId(sourceIndex))
+      ? makeHiddenEntryPlaceholder(e, sourceIndex)
+      : makeEntryEl(e, sourceIndex);
     el.dataset.entryTab = e.tab;
     section.appendChild(el);
   });
@@ -663,14 +707,35 @@ function buildTabBar(entries) {
   all.textContent = "すべて";
   ui.tabBar.appendChild(all);
   tabs.forEach((tab) => {
+    const control = document.createElement("div");
+    control.className = "tab-control";
     const b = document.createElement("button");
     b.className = "tab-btn";
     b.dataset.tab = tab;
     b.textContent = tab === "_" ? "(未分類)" : tab;
-    ui.tabBar.appendChild(b);
+    control.appendChild(b);
+    if (state.sourceMode === "official") {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "remove-tab-btn";
+      remove.dataset.removeTab = tab;
+      remove.title = `「${tab === "_" ? "未分類" : tab}」タブを削除`;
+      remove.setAttribute("aria-label", remove.title);
+      remove.textContent = "×";
+      control.appendChild(remove);
+    }
+    ui.tabBar.appendChild(control);
   });
 }
 ui.tabBar.addEventListener("click", (e) => {
+  const remove = e.target.closest(".remove-tab-btn");
+  if (remove) {
+    const tab = remove.dataset.removeTab;
+    state.removedOfficialTabs.add(tab);
+    state.activeTab = "all";
+    reprocess();
+    return;
+  }
   const b = e.target.closest(".tab-btn");
   if (!b) return;
   state.activeTab = b.dataset.tab;
@@ -1134,6 +1199,16 @@ function render() {
   applyFilters();
 }
 
+function applyRemovedOfficialTabs(entries) {
+  const remaining = entries
+    .map((entry, sourceIndex) => ({ ...entry, sourceIndex }))
+    .filter((entry) => !state.removedOfficialTabs.has(entry.tab));
+  state.mainTab = remaining.some((entry) => entry.tab === "メイン")
+    ? "メイン"
+    : remaining[0]?.tab || "_";
+  return remaining;
+}
+
 /* ─── ファイル読み込み ─── */
 /* isNewFile=true: 新規ファイルで全リセット / false: GM設定変更による再処理 */
 function processHTML(html, isNewFile = true) {
@@ -1154,6 +1229,8 @@ function processHTML(html, isNewFile = true) {
     state.activeChar = "all";
     state.rawHtml = html; // 再処理用に保持
     state.rawOfficialFiles = [];
+    state.removedOfficialTabs.clear();
+    state.hiddenEntryIds.clear();
     state.mainTab = "_";
   }
 
@@ -1183,9 +1260,11 @@ function processOfficialFiles(files, isNewFile = true) {
     state.activeTab = "all";
     state.activeChar = "all";
     state.rawOfficialFiles = files;
+    state.removedOfficialTabs.clear();
+    state.hiddenEntryIds.clear();
     state.rawHtml = "";
   }
-  state.entries = parseOfficialLogs(files);
+  state.entries = applyRemovedOfficialTabs(parseOfficialLogs(files));
   if (!state.entries.length) {
     alert("公式HTMLログ内にメッセージが見つかりませんでした。");
     return;
@@ -1418,10 +1497,16 @@ ui.exportHtmlBtn.addEventListener("click", async () => {
     /* 画面DOMをクローンしてエクスポート用に変換する。
        makeEntryEl が唯一の構造定義となり、二重管理を排除する */
     function exportEntryNode(node, entry, idx) {
-      const clone = node.cloneNode(true);
+      const isHiddenInViewer = node.classList.contains("hidden-entry-placeholder");
+      // 閲覧中に畳んだ発言は、保存ログでも畳んだ状態を維持する。
+      const sourceNode = isHiddenInViewer
+        ? makeEntryEl(entry, entry.sourceIndex ?? idx)
+        : node;
+      const clone = sourceNode.cloneNode(true);
+      clone.dataset.entryTab = entry.tab;
       clone.classList.remove("hidden");
       // 操作系ボタンはエクスポート不要
-      clone.querySelectorAll(".add-still-btn, .remove-still-btn").forEach(b => b.remove());
+      clone.querySelectorAll(".add-still-btn, .remove-still-btn, .hide-entry-btn, .restore-entry-btn").forEach(b => b.remove());
       /* imgのData URLは各発言に重複するため、共有CSSクラスへ置き換える */
       if (entry.type === "pc" && exportAvatarClasses.has(entry.speaker)) {
         const avatar = clone.querySelector(".avatar");
@@ -1431,7 +1516,15 @@ ui.exportHtmlBtn.addEventListener("click", async () => {
           avatar.style.background = "";
         }
       }
-      return clone.outerHTML;
+      if (!isHiddenInViewer) return clone.outerHTML;
+      clone.classList.add("export-hidden-content");
+      const placeholder = document.createElement("div");
+      placeholder.className = "export-hidden-entry";
+      placeholder.dataset.entryTab = entry.tab;
+      placeholder.dataset.entryType = entry.type;
+      if (entry.type === "pc") placeholder.dataset.speaker = entry.speaker;
+      placeholder.appendChild(clone);
+      return placeholder.outerHTML;
     }
 
     const expTabs = orderedTabs(state.entries);
@@ -1477,6 +1570,9 @@ ui.exportHtmlBtn.addEventListener("click", async () => {
     ].filter(Boolean).join("・");
 
     const domNodes = Array.from(ui.logArea.querySelector(".tab-section").children);
+    const hiddenEntryCount = state.entries.filter((entry, index) =>
+      state.hiddenEntryIds.has(entryVisibilityId(entry.sourceIndex ?? index)),
+    ).length;
     const bodyHtml =
       `<div class="tab-section">\n` +
       state.entries.map((e, i) => exportEntryNode(domNodes[i], e, i)).join("\n") +
@@ -1549,6 +1645,7 @@ body{background:var(--bg);color:var(--text);font-family:'Hiragino Sans','Yu Goth
 #controls{display:flex;}
 .settings-panel.export-critical-stats{display:block;}
 #themeToggle{position:fixed;top:1rem;right:1rem;z-index:100;}
+.show-hidden-entries-btn{padding:.28rem .7rem;border:1px solid var(--border-mid);border-radius:5px;background:var(--surface);color:var(--text-sub);font:inherit;font-size:.78rem;cursor:pointer;}.show-hidden-entries-btn:hover{border-color:var(--accent);color:var(--accent);}.export-hidden-entry.hidden{display:none!important;}.export-hidden-content{display:none;}.export-hidden-entry.revealed>.export-hidden-content{display:block;}
 `;
     /* 共有アバターCSSは、実行時CSS／フォールバックのどちらを使う場合にも必ず追加する。 */
     const css = `${getRuntimeStylesheetCss() || fallbackCss}\n${exportAvatarCss}\n${exportCssOverrides}`;
@@ -1574,6 +1671,12 @@ el.classList.toggle('hidden',tabHidden||charHidden);
 var tabHidden=filteringTab&&el.dataset.entryTab!==activeTab;
 el.classList.toggle('hidden',tabHidden||filteringChar);
     });
+    document.querySelectorAll('.export-hidden-entry').forEach(function(el){
+var tabHidden=filteringTab&&el.dataset.entryTab!==activeTab;
+var type=el.dataset.entryType;
+var charHidden=type==='pc'?(filteringChar&&el.dataset.speaker!==activeChar):filteringChar;
+el.classList.toggle('hidden',tabHidden||charHidden);
+    });
   }
   var tabBar=document.getElementById('tab-bar');
   if(tabBar)tabBar.addEventListener('click',function(e){
@@ -1591,6 +1694,14 @@ x.classList.toggle('active',(x.dataset.filter||'all')===activeChar);
     });
     var menu=b.closest('.char-filter-menu');if(menu)menu.open=false;
     applyFilters();
+  });
+  var showHiddenBtn=document.getElementById('showHiddenEntriesBtn');
+  if(showHiddenBtn)showHiddenBtn.addEventListener('click',function(){
+    var entries=document.querySelectorAll('.export-hidden-entry');
+    var revealed=!showHiddenBtn.classList.contains('revealed');
+    entries.forEach(function(entry){entry.classList.toggle('revealed',revealed);});
+    showHiddenBtn.classList.toggle('revealed',revealed);
+    showHiddenBtn.textContent=revealed?'非表示の発言を隠す（'+entries.length+'）':'非表示の発言を表示（'+entries.length+'）';
   });
   var toggle=document.getElementById('themeToggle');
   if(toggle)toggle.addEventListener('click',function(){
@@ -1631,6 +1742,7 @@ ${expTabs.length > 1 ? `<div id="tab-bar">${tabBtnsHtml}</div>` : '<div id="tab-
 ${charBtnsHtml}
 </div>
 </details>
+${hiddenEntryCount ? `<button class="show-hidden-entries-btn" id="showHiddenEntriesBtn" type="button">非表示の発言を表示（${hiddenEntryCount}）</button>` : ""}
 </div>
 ${criticalRowsHtml ? `<details class="settings-panel critical-stats export-critical-stats"><summary>クリファン回数</summary><div class="panel-body"><p class="panel-help">集計対象：${enabledStatTypes}</p>${criticalRowsHtml}</div></details>` : ""}
 <div class="log-area showing-all${state.sourceMode === "official" ? " official-log" : ""}">

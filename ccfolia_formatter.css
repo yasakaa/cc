@@ -233,6 +233,28 @@ h1 {
   gap: 0.4rem;
   margin-bottom: 1rem;
 }
+.tab-control {
+  display: inline-flex;
+  align-items: stretch;
+}
+.tab-control .tab-btn {
+  border-radius: 999px 0 0 999px;
+}
+.remove-tab-btn {
+  width: 1.65rem;
+  border: 1px solid var(--border);
+  border-left: 0;
+  border-radius: 0 999px 999px 0;
+  background: var(--surface2);
+  color: var(--muted);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.remove-tab-btn:hover {
+  border-color: #c05050;
+  color: #e07070;
+}
 .tab-btn {
   padding: 0.28rem 0.85rem;
   border-radius: 999px;
@@ -718,7 +740,7 @@ h1 {
 .add-still-btn {
   position: absolute;
   top: 0.5rem;
-  right: 0;
+  right: 2.1rem;
   display: none;
   align-items: center;
   gap: 3px;
@@ -738,6 +760,51 @@ h1 {
   display: inline-flex;
 }
 .add-still-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.hide-entry-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0;
+  display: none;
+  width: 1.65rem;
+  height: 1.65rem;
+  padding: 0;
+  border: 1px solid var(--border-mid);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--muted);
+  font: 1rem/1 sans-serif;
+  cursor: pointer;
+  z-index: 2;
+}
+.entry-wrapper:hover .hide-entry-btn,
+.entry.sys:hover .hide-entry-btn {
+  display: block;
+}
+.hide-entry-btn:hover {
+  border-color: #c05050;
+  color: #e07070;
+}
+.entry.sys {
+  position: relative;
+}
+.hidden-entry-placeholder {
+  margin: 0.25rem 0;
+  padding: 0.35rem 0;
+  border-bottom: 0.5px dashed var(--border-mid);
+}
+.restore-entry-btn {
+  padding: 0.2rem 0.55rem;
+  border: 1px dashed var(--border-mid);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: 0.72rem/1.4 inherit;
+  cursor: pointer;
+}
+.restore-entry-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
